@@ -1,6 +1,45 @@
 // Settings — campaign config + agent roster
 const { useState: useStateST, useMemo: useMemoST } = React;
 
+// Inline-editable agent name cell: click the name to rename, Enter/blur saves.
+function EditableAgentName({ agent, onUpdateAgent }) {
+  const [editing, setEditing] = useStateST(false);
+  const [val, setVal] = useStateST(agent.full_name);
+
+  const save = () => {
+    const name = val.trim();
+    if (name && name !== agent.full_name) onUpdateAgent(agent.id, { full_name: name });
+    else setVal(agent.full_name);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        className="input"
+        style={{ maxWidth: 240, padding: "4px 8px" }}
+        value={val}
+        autoFocus
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") save();
+          if (e.key === "Escape") { setVal(agent.full_name); setEditing(false); }
+        }}
+      />
+    );
+  }
+  return (
+    <span
+      style={{ cursor: "pointer" }}
+      title="Click to rename"
+      onClick={() => { setVal(agent.full_name); setEditing(true); }}
+    >
+      {agent.full_name}
+    </span>
+  );
+}
+
 function Settings({ campaign, agents, profile, onUpdateCampaign, onAddAgent, onUpdateAgent, onDeleteCampaign, leadsCount }) {
   const [form, setForm] = useStateST({ ...campaign });
   const [savedFlash, setSavedFlash] = useStateST(false);
@@ -144,7 +183,7 @@ function Settings({ campaign, agents, profile, onUpdateCampaign, onAddAgent, onU
             <tbody>
               {activeAgents.map(a => (
                 <tr key={a.id}>
-                  <td>{a.full_name}</td>
+                  <td><EditableAgentName agent={a} onUpdateAgent={onUpdateAgent}/></td>
                   <td>
                     {a.status === "active"
                       ? <span className="tag" style={{ color: "var(--money-pos)", borderColor: "var(--accent-line)", background: "var(--accent-soft)" }}>Active</span>
