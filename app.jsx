@@ -326,6 +326,99 @@ function App({ authedProfile }) {
   const [tab, setTab] = useStateApp("overview");
   const [showNewCampaign, setShowNewCampaign] = useStateApp(false);
 
+  // ---- Persistence: localStorage + Supabase cloud autosave & live sync ----
+  // The whole data state is mirrored to localStorage (instant, offline-safe)
+  // and to a single Supabase `app_state` row (shared across devices/users).
+  // No per-handler wiring needed — any setLeads/setAgents/etc. flows through here.
+  const PERSIST_KEY = "callops_state_v1";
+  const persistClientId = React.useRef("c_" + Math.random().toString(36).slice(2)).current;
+  const [hydrated, setHydrated] = useStateApp(false);
+  const lastCloudAt = React.useRef(null);
+  const lastBlobJSON = React.useRef(null);
+
+  const collectState = () => ({
+    campaigns, agents, leads, shiftLogs, attendanceOverrides, users, auditLog, rolePerms, userOverrides,
+  });
+  const applyState = (d) => {
+    if (!d || typeof d !== "object") return;
+    lastBlobJSON.current = JSON.stringify(d);
+    if (d.campaigns) setCampaigns(d.campaigns);
+    if (d.agents) setAgents(d.agents);
+    if (d.leads) setLeads(d.leads);
+    if (d.shiftLogs) setShiftLogs(d.shiftLogs);
+    if (d.attendanceOverrides) setAttendanceOverrides(d.attendanceOverrides);
+    if (d.users) setUsers(d.users);
+    if (d.auditLog) setAuditLog(d.auditLog);
+    if (d.rolePerms) setRolePerms(d.rolePerms);
+    if (d.userOverrides) setUserOverrides(d.userOverrides);
+  };
+
+  // Initial load — localStorage first (instant), then Supabase (authoritative).
+  useEffectApp(() => {
+    let cancelled = false;
+    try {
+      const raw = localStorage.getItem(PERSIST_KEY);
+      if (raw) applyState(JSON.parse(raw));
+    } catch (e) { console.warn("[persist] local load failed", e); }
+    (async () => {
+      try {
+        if (window.SB && window.SB.client) {
+          const { data, error } = await window.SB.client
+            .from("app_state").select("data, updated_at").eq("id", "singleton").maybeSingle();
+          if (!cancelled && !error && data && data.data) {
+            lastCloudAt.current = data.updated_at;
+            applyState(data.data);
+          }
+        }
+      } catch (e) { console.warn("[persist] cloud load failed", e); }
+      if (!cancelled) setHydrated(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Autosave — on any data change (post-hydration), debounce-save local + cloud.
+  useEffectApp(() => {
+    if (!hydrated) return;
+    const blob = collectState();
+    const json = JSON.stringify(blob);
+    if (json === lastBlobJSON.current) return; // unchanged (e.g. just applied a remote update)
+    lastBlobJSON.current = json;
+    const t = setTimeout(async () => {
+      try { localStorage.setItem(PERSIST_KEY, json); } catch (e) {}
+      try {
+        if (window.SB && window.SB.client) {
+          const { data, error } = await window.SB.client
+            .from("app_state")
+            .upsert({ id: "singleton", data: blob, updated_at: new Date().toISOString(), updated_by: persistClientId })
+            .select("updated_at").single();
+          if (!error && data) lastCloudAt.current = data.updated_at;
+        }
+      } catch (e) { console.warn("[persist] cloud save failed", e); }
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [hydrated, campaigns, agents, leads, shiftLogs, attendanceOverrides, users, auditLog, rolePerms, userOverrides]);
+
+  // Live sync — poll the cloud for changes made by other sessions/devices.
+  useEffectApp(() => {
+    if (!hydrated || !window.SB || !window.SB.client) return;
+    const poll = setInterval(async () => {
+      try {
+        const { data: meta, error } = await window.SB.client
+          .from("app_state").select("updated_at, updated_by").eq("id", "singleton").maybeSingle();
+        if (error || !meta) return;
+        if (meta.updated_by === persistClientId) return;     // our own write
+        if (meta.updated_at === lastCloudAt.current) return;  // nothing new
+        const { data: full } = await window.SB.client
+          .from("app_state").select("data, updated_at").eq("id", "singleton").maybeSingle();
+        if (full && full.data) {
+          lastCloudAt.current = full.updated_at;
+          applyState(full.data);
+        }
+      } catch (e) {}
+    }, 2000);
+    return () => clearInterval(poll);
+  }, [hydrated]);
+
   // ---- Impersonation: "view as" another user ----
   const startImpersonate = useCallbackApp((userId) => {
     const u = users.find(x => x.id === userId);
