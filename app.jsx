@@ -451,7 +451,6 @@ function App({ authedProfile }) {
       tl_bonus: lead.tl_bonus || 0,
       tl_recipient_id: lead.tl_recipient_id || null,
       appointment_date: lead.appointment_date || null,
-      appointment_time: lead.appointment_time || null,
       notes: lead.notes || "",
     };
     setLeads(prev => {

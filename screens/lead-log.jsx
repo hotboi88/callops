@@ -211,7 +211,7 @@ function LeadLog({ campaign, agents, leads, onAddLead, onUpdateLead, onDeleteLea
                       )}
                     </td>
                     <td><Money v={total} bold/></td>
-                    <td className="num-l muted">{U.fmtAppt(l.appointment_date, l.appointment_time)}</td>
+                    <td className="num-l muted">{U.fmtAppt(l.appointment_date)}</td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <button className="icon-btn" onClick={() => setEditLead(l)} aria-label="Edit">
                         <Icon name="edit"/>
@@ -326,7 +326,6 @@ function LeadFormModal({ campaign, agents, lead, onClose, onSave, onDelete }) {
     tl_bonus: lead?.tl_bonus || 0,
     tl_recipient_id: lead?.tl_recipient_id || "",
     appointment_date: lead?.appointment_date || "",
-    appointment_time: lead?.appointment_time || "",
     notes: lead?.notes || "",
   }));
 
@@ -425,15 +424,9 @@ function LeadFormModal({ campaign, agents, lead, onClose, onSave, onDelete }) {
         </div>
 
         {isApptStatus && (
-          <div className="row-2">
-            <div className="field">
-              <label>Appointment Date</label>
-              <DatePicker value={form.appointment_date} onChange={(v) => update("appointment_date", v)} clearable/>
-            </div>
-            <div className="field">
-              <label>Appointment Time</label>
-              <TimePicker value={form.appointment_time} onChange={(v) => update("appointment_time", v)} clearable/>
-            </div>
+          <div className="field">
+            <label>Appointment Date</label>
+            <DatePicker value={form.appointment_date} onChange={(v) => update("appointment_date", v)} clearable/>
           </div>
         )}
 
