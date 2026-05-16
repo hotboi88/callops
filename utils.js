@@ -75,19 +75,30 @@
   U.weekLabel = function (s) { return "WK" + U.weekNumber(s); };
 
   U.fmtAppt = function (date, time) {
-    if (!date) return "—";
-    const d = U.parseDate(date);
-    if (!d) return "—";
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    let out = m + "/" + dd;
-    if (time) {
-      const [hh, mm] = time.split(":").map(Number);
-      const period = hh >= 12 ? "p" : "a";
-      const hr12 = ((hh + 11) % 12) + 1;
-      out += " " + hr12 + (mm === 0 ? "" : ":" + String(mm).padStart(2,"0")) + period;
+    // Appointment fields are free-form: seed data has "March 31", "Today",
+    // "5pm", "4-5pm"; the form's pickers produce clean ISO "2026-03-31" and
+    // 24h "17:00". Reformat the clean shapes; pass everything else through
+    // untouched so messy human text stays readable instead of becoming NaN.
+    date = (date == null ? "" : String(date)).trim();
+    time = (time == null ? "" : String(time)).trim();
+    if (!date && !time) return "—";
+
+    let datePart = date;
+    const iso = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (iso) datePart = iso[2] + "/" + iso[3];
+
+    let timePart = time;
+    const hm = time.match(/^(\d{1,2}):(\d{2})$/);
+    if (hm) {
+      const hh = +hm[1], mm = +hm[2];
+      if (hh <= 23 && mm <= 59) {
+        const period = hh >= 12 ? "pm" : "am";
+        const hr12 = ((hh + 11) % 12) + 1;
+        timePart = hr12 + (mm === 0 ? "" : ":" + String(mm).padStart(2, "0")) + period;
+      }
     }
-    return out;
+
+    return [datePart, timePart].filter(Boolean).join(" ") || "—";
   };
 
   // ---- IA tier recompute for a given campaign + all its leads ----
