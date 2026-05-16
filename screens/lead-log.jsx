@@ -331,8 +331,6 @@ function LeadFormModal({ campaign, agents, lead, onClose, onSave, onDelete }) {
 
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const isApptStatus = form.status === "confirmed" || form.status === "ia";
-
   const submit = () => {
     if (!form.customer_name.trim()) return;
     onSave({
@@ -423,12 +421,10 @@ function LeadFormModal({ campaign, agents, lead, onClose, onSave, onDelete }) {
           </div>
         </div>
 
-        {isApptStatus && (
-          <div className="field">
-            <label>Appointment Date</label>
-            <DatePicker value={form.appointment_date} onChange={(v) => update("appointment_date", v)} clearable/>
-          </div>
-        )}
+        <div className="field">
+          <label>Appointment Date</label>
+          <DatePicker value={form.appointment_date} onChange={(v) => update("appointment_date", v)} clearable/>
+        </div>
 
         <div className="field">
           <label>Notes</label>
