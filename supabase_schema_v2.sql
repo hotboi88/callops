@@ -59,7 +59,7 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
 
--- Pre-seed Derek as the first admin (consumed on his first Google sign-in)
+-- Pre-seed Derek as the first admin (consumed when his account is created)
 insert into public.user_invites (email, full_name, role)
 values ('derekscotthill@gmail.com', 'Derek Hill', 'admin');
 
@@ -300,7 +300,8 @@ create policy "members manage campaign pay periods" on public.pay_periods
 
 -- ═══════════════════════════════════════════════════════════════
 -- DONE.
--- Next: configure Google OAuth in Supabase Auth → Providers.
--- Then sign in once with derekscotthill@gmail.com to consume the
--- pre-seeded admin invite.
+-- Next: in Supabase Auth → Providers → Email, turn OFF "Confirm email"
+-- (so sign-up works without SMTP). Then go to the site, create an
+-- account with derekscotthill@gmail.com to consume the pre-seeded
+-- admin invite, and you're in.
 -- ═══════════════════════════════════════════════════════════════

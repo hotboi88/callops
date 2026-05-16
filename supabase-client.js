@@ -19,12 +19,20 @@
 
   // ─── AUTH ────────────────────────────────────────────────────
   const auth = {
-    async signInWithGoogle() {
-      const { error } = await client.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: window.location.origin + window.location.pathname },
+    async signInWithEmail(email, password) {
+      const { error } = await client.auth.signInWithPassword({
+        email: String(email).trim().toLowerCase(),
+        password,
       });
       if (error) throw error;
+    },
+    async signUpWithEmail(email, password) {
+      const { data, error } = await client.auth.signUp({
+        email: String(email).trim().toLowerCase(),
+        password,
+      });
+      if (error) throw error;
+      return data; // data.session is null when email confirmation is still required
     },
     async signOut() {
       await client.auth.signOut();
