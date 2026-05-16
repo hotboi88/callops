@@ -1,0 +1,11 @@
+# Design scratch — pasted screenshots and spec copies, not needed at runtime
+uploads/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+
+# Local archives
+*.zip

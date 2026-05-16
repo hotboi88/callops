@@ -284,7 +284,7 @@ function CampaignShell(props) {
 }
 
 // ---------- Top App ----------
-function App() {
+function App({ authedProfile }) {
   // ---- State ----
   const initial = window.MOCK_DATA;
   const [campaigns, setCampaigns] = useStateApp(initial.campaigns);
@@ -292,7 +292,7 @@ function App() {
   const [leads, setLeads] = useStateApp(initial.leads);
   const [shiftLogs, setShiftLogs] = useStateApp(initial.shift_logs);
   const [attendanceOverrides, setAttendanceOverrides] = useStateApp({}); // {"agentId|date": "present|absent|off"}
-  const [profile, setProfile] = useStateApp(initial.profile);
+  const [profile, setProfile] = useStateApp(authedProfile || initial.profile);
   const [impersonatingFrom, setImpersonatingFrom] = useStateApp(null);
   const [users, setUsers] = useStateApp(initial.users || []);
   const [auditLog, setAuditLog] = useStateApp(initial.audit_log || []);
@@ -1018,4 +1018,54 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+// ─── Root: auth gate wrapping the app ──────────────────────────
+// When CONFIG.USE_SUPABASE is false → renders <App/> as before (demo mode).
+// When true → checks session/profile and renders AuthScreen if not allowed.
+function Root() {
+  const useSupabase = !!(window.CONFIG && window.CONFIG.USE_SUPABASE && window.SB);
+  const [state, setState] = useStateApp(useSupabase ? "loading" : "ready");
+  const [profile, setProfile] = useStateApp(null);
+
+  useEffectApp(() => {
+    if (!useSupabase) return;
+    let cancelled = false;
+
+    async function check() {
+      try {
+        const session = await window.SB.auth.getSession();
+        if (cancelled) return;
+        if (!session) { setState("signedout"); return; }
+        const p = await window.SB.auth.getProfile();
+        if (cancelled) return;
+        if (!p) { setState("denied"); return; }
+        // Map Supabase profile shape → app's expected shape (initials, etc.)
+        const mapped = {
+          id: p.id,
+          email: p.email,
+          full_name: p.full_name || p.email,
+          initials: (p.full_name || p.email).split(/\s+/).map(s => s[0]).slice(0, 2).join("").toUpperCase() || "U",
+          role: p.role,
+        };
+        setProfile(mapped);
+        setState("ready");
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setState("signedout");
+      }
+    }
+    check();
+
+    const unsub = window.SB.auth.onAuthChange((event) => {
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") check();
+      if (event === "SIGNED_OUT") setState("signedout");
+    });
+    return () => { cancelled = true; unsub && unsub(); };
+  }, [useSupabase]);
+
+  if (state === "loading")    return <div className="auth-screen"><div className="auth-card auth-loading">Loading…</div></div>;
+  if (state === "signedout")  return <AuthScreen mode="signin" />;
+  if (state === "denied")     return <AuthScreen mode="denied" />;
+  return <App authedProfile={profile} />;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Root/>);
