@@ -381,7 +381,7 @@ function InviteUserModal({ campaigns, onClose, onSave }) {
           borderRadius: "var(--radius-sm)",
           border: "1px solid var(--border-subtle)",
         }}>
-          They'll receive an email at <strong style={{ color: "var(--text-2)" }}>{form.email || "their email"}</strong> with a link to set their password and sign in.
+          Once invited, <strong style={{ color: "var(--text-2)" }}>{form.email || "their email"}</strong> can sign in at your CallOps URL — they click “Create one”, sign up with this email, and choose their own password.
         </div>
       </div>
     </Modal>

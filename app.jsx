@@ -770,6 +770,23 @@ function App({ authedProfile }) {
       campaign_name: null,
       description: `Invited ${data.email} as ${data.role}`,
     });
+    // Whitelist the email in Supabase. When the invitee signs up with this
+    // email + a password they choose, the handle_new_user trigger consumes
+    // the invite and creates their profile with this role/campaigns.
+    (async () => {
+      try {
+        if (window.SB) {
+          await window.SB.invites.create({
+            email: data.email,
+            full_name: data.full_name,
+            role: data.role,
+            campaign_ids: data.campaign_ids || [],
+          });
+        }
+      } catch (e) {
+        console.warn("[invite] could not create Supabase invite:", e);
+      }
+    })();
   }, [pushAudit]);
 
   const onUpdateUserMut = useCallbackApp((id, updates) => {
