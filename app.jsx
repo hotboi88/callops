@@ -749,44 +749,51 @@ function App({ authedProfile }) {
   }, [activeCampaign, agents, pushAudit]);
 
   // ---- User mutations ----
-  const onInviteUser = useCallbackApp((data) => {
-    const id = "u_" + Date.now();
-    const initials = data.full_name.split(" ").map(x => x[0]).join("").slice(0, 2).toUpperCase();
-    const u = {
-      id, initials,
-      full_name: data.full_name,
-      email: data.email,
-      role: data.role,
-      campaign_ids: data.campaign_ids || [],
-      status: "invited",
-      last_active: null,
-      created_at: new Date().toISOString(),
+  // Creates a real login account via the invite-user Edge Function (which
+  // holds the service-role key). The admin sets the password. Returns
+  // { ok: true } or { error: "..." } so the modal can show the result.
+  const onInviteUser = useCallbackApp(async (data) => {
+    const buildRosterUser = () => {
+      const initials = (data.full_name || data.email).split(" ").map(x => x[0]).join("").slice(0, 2).toUpperCase();
+      return {
+        id: "u_" + Date.now(), initials,
+        full_name: data.full_name,
+        email: data.email,
+        role: data.role,
+        campaign_ids: data.campaign_ids || [],
+        status: "active",
+        last_active: null,
+        created_at: new Date().toISOString(),
+      };
     };
-    setUsers(prev => [...prev, u]);
+    if (!window.SB || !window.SB.client) {
+      setUsers(prev => [...prev, buildRosterUser()]);
+      return { ok: true };
+    }
+    try {
+      const { data: res, error } = await window.SB.client.functions.invoke("invite-user", {
+        body: {
+          email: data.email,
+          full_name: data.full_name,
+          role: data.role,
+          campaign_ids: data.campaign_ids || [],
+          password: data.password,
+        },
+      });
+      if (error) return { error: "Couldn't reach the invite service — is the Edge Function deployed?" };
+      if (!res || !res.ok) return { error: (res && res.error) || "Invite failed." };
+    } catch (e) {
+      return { error: (e && e.message) || String(e) };
+    }
+    setUsers(prev => [...prev, buildRosterUser()]);
     pushAudit({
       kind: "user.invite",
       category: "users",
       campaign_id: null,
       campaign_name: null,
-      description: `Invited ${data.email} as ${data.role}`,
+      description: `Created account for ${data.email} as ${data.role}`,
     });
-    // Whitelist the email in Supabase. When the invitee signs up with this
-    // email + a password they choose, the handle_new_user trigger consumes
-    // the invite and creates their profile with this role/campaigns.
-    (async () => {
-      try {
-        if (window.SB) {
-          await window.SB.invites.create({
-            email: data.email,
-            full_name: data.full_name,
-            role: data.role,
-            campaign_ids: data.campaign_ids || [],
-          });
-        }
-      } catch (e) {
-        console.warn("[invite] could not create Supabase invite:", e);
-      }
-    })();
+    return { ok: true };
   }, [pushAudit]);
 
   const onUpdateUserMut = useCallbackApp((id, updates) => {

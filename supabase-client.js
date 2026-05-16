@@ -26,14 +26,6 @@
       });
       if (error) throw error;
     },
-    async signUpWithEmail(email, password) {
-      const { data, error } = await client.auth.signUp({
-        email: String(email).trim().toLowerCase(),
-        password,
-      });
-      if (error) throw error;
-      return data; // data.session is null when email confirmation is still required
-    },
     async signOut() {
       await client.auth.signOut();
     },

@@ -238,7 +238,7 @@ function UsersTab({ users, campaigns, profile, rolePerms, userOverrides, onInvit
         <InviteUserModal
           campaigns={campaigns}
           onClose={() => setShowInvite(false)}
-          onSave={(data) => { onInviteUser(data); setShowInvite(false); }}
+          onSave={onInviteUser}
         />
       )}
       {editUser && (
@@ -284,7 +284,10 @@ function InviteUserModal({ campaigns, onClose, onSave }) {
     email: "",
     role: "manager",
     campaign_ids: [],
+    password: "",
   });
+  const [busy, setBusy] = useStateAD(false);
+  const [err, setErr] = useStateAD(null);
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const toggleCampaign = (cid) => {
     setForm(f => ({
@@ -294,7 +297,15 @@ function InviteUserModal({ campaigns, onClose, onSave }) {
         : [...f.campaign_ids, cid]
     }));
   };
-  const canSave = form.full_name.trim() && form.email.includes("@");
+  const canSave = form.full_name.trim() && form.email.includes("@") && form.password.length >= 6;
+
+  const submit = async () => {
+    if (!canSave || busy) return;
+    setBusy(true); setErr(null);
+    const res = await onSave(form);
+    if (res && res.ok) { onClose(); }
+    else { setErr((res && res.error) || "Something went wrong."); setBusy(false); }
+  };
 
   return (
     <Modal
@@ -304,9 +315,9 @@ function InviteUserModal({ campaigns, onClose, onSave }) {
       width="540px"
       footer={
         <>
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => canSave && onSave(form)} disabled={!canSave}>
-            Send invite
+          <button className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+          <button className="btn btn-primary" onClick={submit} disabled={!canSave || busy}>
+            {busy ? "Creating…" : "Create account"}
           </button>
         </>
       }
@@ -321,6 +332,11 @@ function InviteUserModal({ campaigns, onClose, onSave }) {
             <label>Email</label>
             <input className="input" type="email" value={form.email} onChange={(e) => update("email", e.target.value)} placeholder="devon@callops.io"/>
           </div>
+        </div>
+        <div className="field">
+          <label>Password</label>
+          <input className="input" type="text" value={form.password} onChange={(e) => update("password", e.target.value)} placeholder="Set their password — min 6 characters"/>
+          <div className="help" style={{ marginTop: 2 }}>You choose the password and share it with them. They sign in with it as-is.</div>
         </div>
         <div className="field">
           <label>Role</label>
@@ -381,8 +397,11 @@ function InviteUserModal({ campaigns, onClose, onSave }) {
           borderRadius: "var(--radius-sm)",
           border: "1px solid var(--border-subtle)",
         }}>
-          Once invited, <strong style={{ color: "var(--text-2)" }}>{form.email || "their email"}</strong> can sign in at your CallOps URL — they click “Create one”, sign up with this email, and choose their own password.
+          This creates a ready-to-use login. Give <strong style={{ color: "var(--text-2)" }}>{form.email || "their email"}</strong> their email + password — they sign in at your CallOps URL right away.
         </div>
+        {err && (
+          <div className="help" style={{ color: "var(--status-dnc-fg, #ef4444)" }}>{err}</div>
+        )}
       </div>
     </Modal>
   );
