@@ -168,7 +168,7 @@ function LeadLog({ campaign, agents, leads, onAddLead, onUpdateLead, onDeleteLea
                 <th className="num sortable" onClick={() => handleSort("total")} style={{ width: 80 }}>
                   Total {sort.col === "total" && <span className="arrow">{sort.dir === "asc" ? "↑" : "↓"}</span>}
                 </th>
-                <th style={{ width: 90 }}>Appt</th>
+                <th style={{ width: 115 }}>Appt</th>
                 <th style={{ width: 40 }}></th>
               </tr>
             </thead>
@@ -211,7 +211,14 @@ function LeadLog({ campaign, agents, leads, onAddLead, onUpdateLead, onDeleteLea
                       )}
                     </td>
                     <td><Money v={total} bold/></td>
-                    <td className="num-l muted">{U.fmtAppt(l.appointment_date)}</td>
+                    <td className="num-l muted">
+                      {U.parseDate(l.appointment_date) ? (
+                        <>
+                          {U.shortDate(l.appointment_date)}{" "}
+                          <span className="muted-2" style={{ fontSize: 11 }}>{U.dayOfWeek(l.appointment_date)}</span>
+                        </>
+                      ) : "—"}
+                    </td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <button className="icon-btn" onClick={() => setEditLead(l)} aria-label="Edit">
                         <Icon name="edit"/>
