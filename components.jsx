@@ -98,12 +98,19 @@ function Popover({ open, anchorRef, onClose, children, align = "start" }) {
   const [pos, setPos] = useState(initialPos);
   const popRef = useRef(null);
   // Re-measure with useLayoutEffect (runs before paint) when open flips on.
+  // Uses the popover's actual rendered width so align="end" lines the right
+  // edges up exactly, then clamps so the menu never spills off-screen.
   React.useLayoutEffect(() => {
     if (!open || !anchorRef?.current) return;
     const r = anchorRef.current.getBoundingClientRect();
+    const pw = popRef.current ? popRef.current.offsetWidth : 180;
     const top = r.bottom + window.scrollY + 4;
-    let left = r.left + window.scrollX;
-    if (align === "end") left = r.right + window.scrollX - 180;
+    let left = align === "end"
+      ? r.right + window.scrollX - pw
+      : r.left + window.scrollX;
+    const minLeft = window.scrollX + 8;
+    const maxLeft = window.scrollX + window.innerWidth - pw - 8;
+    left = Math.max(minLeft, Math.min(left, maxLeft));
     setPos({ top, left });
   }, [open, anchorRef, align]);
   useEffect(() => {
