@@ -42,8 +42,9 @@
   // ---- Date helpers ----
   U.parseDate = function (s) {
     if (!s) return null;
-    const [y, m, d] = s.split("-").map(Number);
-    return new Date(y, m - 1, d);
+    const [y, m, d] = String(s).split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    return isNaN(dt.getTime()) ? null : dt;
   };
   U.dayStr = function (d) {
     const m = String(d.getMonth() + 1).padStart(2, "0");

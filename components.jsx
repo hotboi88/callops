@@ -203,7 +203,7 @@ function Sparkline({ values, width = 60, height = 18, color = "var(--accent)" })
 // Hybrid: type "051526" → auto-formats to "05/15/26". Click the calendar icon for a popover grid.
 function DatePicker({ value, onChange, placeholder = "MM/DD/YY", clearable = false, min, max, autoFocus }) {
   const [open, setOpen] = useState(false);
-  const initialView = value ? U.parseDate(value) : new Date();
+  const initialView = (value && U.parseDate(value)) || new Date();
   const [viewYear, setViewYear] = useState(initialView.getFullYear());
   const [viewMonth, setViewMonth] = useState(initialView.getMonth());
   const [text, setText] = useState(() => value ? U.shortDate(value) : "");

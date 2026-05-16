@@ -317,7 +317,7 @@ function LeadFormModal({ campaign, agents, lead, onClose, onSave, onDelete }) {
   const activeAgents = agents.filter(a => a.status === "active" || (lead && a.id === lead.agent_id));
 
   const [form, setForm] = useStateLL(() => ({
-    date: lead?.date || (window.MOCK_DATA?.today),
+    date: lead?.date || U.dayStr(new Date()),
     agent_id: lead?.agent_id || activeAgents[0]?.id || "",
     customer_name: lead?.customer_name || "",
     phone: lead?.phone || "",
@@ -423,7 +423,7 @@ function LeadFormModal({ campaign, agents, lead, onClose, onSave, onDelete }) {
 
         <div className="field">
           <label>Appointment Date</label>
-          <DatePicker value={form.appointment_date} onChange={(v) => update("appointment_date", v)} clearable/>
+          <DatePicker value={form.appointment_date} onChange={(v) => update("appointment_date", v)} min={form.date} clearable/>
         </div>
 
         <div className="field">
