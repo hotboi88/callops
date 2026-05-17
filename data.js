@@ -115,6 +115,46 @@
   ];
 
   function resolveName(name) { return name; }
+  function properCase(s) {
+    return String(s).replace(/\S+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  }
+  // Real names — agents' self-reported attendance names, reconciled against the
+  // authoritative dialer user list. Keyed by the internal short name.
+  const REAL_NAME = {
+    "Arlene": "Arlene Pernez", "China (Stephany)": "Stephany Duran",
+    "Rein": "Ronald Rey Bambao", "Jennifer Alobin": "Jennifer Alobin",
+    "Rhen": "Rhen Esmen", "Mac": "Mac Chillain", "Gerene": "Gerene Panagsagan",
+    "Aiza": "Aiza Tugaon", "Jarelene": "Jarelene Esmen", "Jhen": "Jennifer Luzon",
+    "Sharon": "Sharon Hernandez", "Richelle": "Richelle Ignacio",
+    "Dianne": "Ethel Dianne", "Emil": "Emil Dionisio", "Ivy": "Ivy Cuizon",
+    "Ruel": "Ruel Tupas", "Nikita": "Ryan Nikita Gonzales", "Irene": "Irene Launo",
+    "Benica": "Benica Serapion", "Jha/Allan": "Jha Altar", "Liz": "Lizlie Baat",
+    "Keith": "Keith Cuevas", "Kemberly": "Kimberly Jean Adlawan", "Jomar": "Jomar Parel",
+    "Divine Grace": "Divine Gamolo", "Aubrey": "Aubrey Deluao",
+    "Larabell": "Larabell Batan", "Marites": "Marites Barro", "Monica": "Monica Malibong",
+    "Lily/Shery": "Shery Redoble", "Nick": "Nathaniel Diamante", "Y0ng": "Rolando Robles",
+    "Sara May A. Enciso": "Sara May Enciso", "prescillgb": "Prescill Berting",
+    "Tanya": "Tanya Aguilar", "Enrique T. Uyanguren": "Enrique Uyanguren",
+    "Jonalyn Buyagon": "Jonalyn Buyagon", "Sy Bby": "James Czyrele Bautista",
+    "Ruby Lyn": "Ruby Fernandez", "San": "San Comellas",
+    "Shin": "Cheryl Perez", "Allan Christopher Atienza": "Allan Christopher Espano Atienza",
+    "Alfe Dela Peña": "Alfe Dela Peña", "AL": "Aldwin Cua", "Renz manalo": "Renz Gozo Manalo",
+    "Jesril Aguiran": "Jesril Aguiran", "Arlene Dayrit104": "Arlene Dayrit",
+    "Fanie": "Fanie Jorolan Murillo", "Richelle Relife": "Richelle Ignacio",
+    "Bry": "Bryan Manao", "🌻🌻🌻": "Benica Serapion",
+    "John Ryan Pagunsan": "John Pagunsan", "Andrea": "Andrea Dionisio",
+    "Faye Raner": "Faye Raner", "Guen Guerrero": "Guen Guerrero",
+    "leadstrat eevecera": "Erica Vecera", "Arlen": "Arlen De La Vega",
+    "talia500226": "Crystal Jaena", "Halaena Faith": "Halaena Faith",
+    "wengflakes": "Mauie Malunes", "markblanco2023": "Mark Blanco",
+    "Charvz": "Charvy Montino", "rjulito1102": "Rodjohn Julito",
+    "norhana liwalug": "Norhana Liwalug", "Je Lay": "Je Lay",
+    "Nikky Boy": "Nikky", "Fairy Rose P Salaya": "Fairy Rose",
+    "Tyrrie": "Ty Ross", "Roxanne Campana": "Roxanne Campana",
+    "John marc Tumlos": "John Marc Tumlos", "Ariz": "Sixto Ariz Deoferio",
+    "Mark Andrew De la Cruz": "Mark Dela Cruz", "Paul": "Paul Brandon Jaculina",
+    "Myrra ligsay": "Myrra Ligsay",
+  };
 
   // From the "Home Relief" attendance WhatsApp chat (the agents' group).
   // Start = explicit "added/joined" marker, else first message (first attendance).
@@ -180,7 +220,7 @@
     const a = {
       id: "ag_" + i,
       campaign_id: campaign.id,
-      full_name: name,
+      full_name: properCase(REAL_NAME[name] || name),
       agent_number: "A" + (1001 + i),
       status: TERMINATED[name] ? "inactive" : status,
       is_tl,
@@ -744,7 +784,7 @@
     profile, users, audit_log, today: dayStr(TODAY),
     // Bump this whenever the seed (agents/leads/etc.) changes — the app
     // discards a saved blob from an older seed and re-seeds from here.
-    seedVersion: 3,
+    seedVersion: 4,
   };
   window.MOCK_TODAY = TODAY;
 })();
