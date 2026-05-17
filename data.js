@@ -66,6 +66,30 @@
 
   function resolveName(name) { return name; }
 
+  // Start = each agent's first message in the Home Relief Leads WhatsApp chat
+  // (≈ first day on the floor). Termination = their group removal/leave date.
+  // Agents who never posted (Benica, Ryan) use their first lead date.
+  const START = {
+    "Arlene": "2026-03-24", "China (Stephany)": "2026-03-24", "Rein": "2026-03-23",
+    "Jennifer Alobin": "2026-04-01", "Rhen": "2026-04-07", "Mac": "2026-04-20",
+    "Gerene": "2026-03-23", "Aiza": "2026-04-10", "Jarelene": "2026-04-06",
+    "Jhen": "2026-04-06", "Sharon": "2026-03-25", "Richelle": "2026-03-25",
+    "Dianne": "2026-04-06", "Emil": "2026-04-27", "Ivy": "2026-04-21",
+    "Ruel": "2026-03-25", "Nikita": "2026-04-13", "Irene": "2026-04-01",
+    "Benica": "2026-04-09", "Jha/Allan": "2026-03-31", "Liz": "2026-04-07",
+    "Keith": "2026-04-27", "Kemberly": "2026-04-13", "Jomar": "2026-04-15",
+    "Divine Grace": "2026-03-25", "Ana M": "2026-03-27", "Aubrey": "2026-04-06",
+    "Larabell": "2026-03-24", "Marites": "2026-04-27", "Monica": "2026-04-27",
+    "Ryan": "2026-04-13", "Lily/Shery": "2026-03-31",
+  };
+  const TERMINATED = {
+    "Sharon": "2026-04-20", "Richelle": "2026-04-07", "Dianne": "2026-04-07",
+    "Emil": "2026-05-08", "Ruel": "2026-04-20", "Jha/Allan": "2026-04-07",
+    "Liz": "2026-04-17", "Keith": "2026-04-29", "Kemberly": "2026-04-26",
+    "Jomar": "2026-04-17", "Aubrey": "2026-04-06", "Larabell": "2026-03-31",
+    "Marites": "2026-04-29", "Monica": "2026-04-29", "Lily/Shery": "2026-05-08",
+  };
+
   const nameToAgent = {};
   const agents = AGENT_DEFS.map(([name, is_tl, _tl, status], i) => {
     const a = {
@@ -73,9 +97,10 @@
       campaign_id: campaign.id,
       full_name: name,
       agent_number: "A" + (1001 + i),
-      status,
+      status: TERMINATED[name] ? "inactive" : status,
       is_tl,
-      date_added: "2026-03-20",
+      date_added: START[name] || "2026-03-20",
+      date_removed: TERMINATED[name] || null,
     };
     nameToAgent[name] = a;
     return a;

@@ -176,10 +176,11 @@ function Settings({ campaign, agents, profile, onUpdateCampaign, onAddAgent, onU
             <thead>
               <tr>
                 <th>Agent</th>
-                <th style={{ width: 110 }}>Status</th>
-                <th style={{ width: 80 }}>Role</th>
-                <th style={{ width: 100 }}>Added</th>
-                <th style={{ width: 180, textAlign: "right" }}>Actions</th>
+                <th style={{ width: 100 }}>Status</th>
+                <th style={{ width: 70 }}>Role</th>
+                <th style={{ width: 125 }}>Started</th>
+                <th style={{ width: 125 }}>Terminated</th>
+                <th style={{ width: 170, textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -192,7 +193,8 @@ function Settings({ campaign, agents, profile, onUpdateCampaign, onAddAgent, onU
                       : <span className="tag tag-inactive">Inactive</span>}
                   </td>
                   <td>{a.is_tl ? <span className="tag tag-tl">★ TL</span> : <span className="tag">Agent</span>}</td>
-                  <td className="num-l muted">{U.shortDate(a.date_added)}</td>
+                  <td><DatePicker value={a.date_added || ""} onChange={(v) => onUpdateAgent(a.id, { date_added: v })}/></td>
+                  <td><DatePicker value={a.date_removed || ""} onChange={(v) => onUpdateAgent(a.id, { date_removed: v || null })} clearable placeholder="—"/></td>
                   <td style={{ textAlign: "right" }}>
                     <button className="btn btn-sm btn-ghost" onClick={() => onUpdateAgent(a.id, { is_tl: !a.is_tl })}>
                       {a.is_tl ? "Remove TL" : "Make TL"}
@@ -207,7 +209,7 @@ function Settings({ campaign, agents, profile, onUpdateCampaign, onAddAgent, onU
                 </tr>
               ))}
               {activeAgents.length === 0 && (
-                <tr><td colSpan={5} style={{ textAlign: "center", padding: 24 }} className="muted">No agents on roster.</td></tr>
+                <tr><td colSpan={6} style={{ textAlign: "center", padding: 24 }} className="muted">No agents on roster.</td></tr>
               )}
             </tbody>
           </table>
