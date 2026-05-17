@@ -38,7 +38,8 @@ function AgentReport({ campaign, agents, leads, onAddAgent }) {
       const w = U.weekLabel(l.date);
       const k = l.agent_id + "|" + w;
       const c = (grid[k] ||= { t: 0, i: 0, c: 0 });
-      if (l.status === "transfer") c.t++;
+      // t = Transferred (every non-pending lead); i and c are subsets of it.
+      if (l.status !== "pending") c.t++;
       if (l.status === "ia") c.i++;
       if (l.status === "confirmed") c.c++;
     });
@@ -143,7 +144,7 @@ function WeeklyGrid({ weeks, grid, agents }) {
       <div className="section-head" style={{ paddingTop: 24, alignItems: "flex-end" }}>
         <div>
           <h2>Weekly Grid</h2>
-          <span className="sub">Transfers · IAs · Confirms per week per agent</span>
+          <span className="sub">Transferred · IAs · Confirms per week per agent</span>
         </div>
         {total > WINDOW && (
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
@@ -198,7 +199,7 @@ function WeeklyGrid({ weeks, grid, agents }) {
               </div>
               {visible.map(w => {
                 const c = grid[a.id + "|" + w] || { t: 0, i: 0, c: 0 };
-                const isEmpty = c.t + c.i + c.c === 0;
+                const isEmpty = c.t === 0;
                 return (
                   <div key={w} className="weekly-cell" style={isEmpty ? { background: "transparent", border: "1px dashed var(--border-subtle)" } : {}}>
                     <div className="label">T · I · C</div>
