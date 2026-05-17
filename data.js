@@ -60,7 +60,6 @@
     ["Larabell"                  , false, null                  , "active"],
     ["Marites"                   , false, null                  , "active"],
     ["Monica"                    , false, null                  , "active"],
-    ["Ryan"                      , false, null                  , "active"],
     ["Lily/Shery"                , false, null                  , "active"],
     // Everyone else who passed through the attendance WhatsApp group — agents
     // who logged no leads (short tenures, never-worked-out hires). Names are the
@@ -85,9 +84,7 @@
     ["Jesril Aguiran", false, null, "active"],
     ["Arlene Dayrit104", false, null, "active"],
     ["Fanie", false, null, "active"],
-    ["Richelle Relife", false, null, "active"],
     ["Bry", false, null, "active"],
-    ["🌻🌻🌻", false, null, "active"],
     ["John Ryan Pagunsan", false, null, "active"],
     ["Andrea", false, null, "active"],
     ["Faye Raner", false, null, "active"],
@@ -114,7 +111,9 @@
     ["Myrra ligsay", false, null, "active"],
   ];
 
-  function resolveName(name) { return name; }
+  // Ryan Gonzales and Nikita are the same person (Ryan Nikita Gonzales).
+  const NAME_ALIASES = { "Ryan": "Nikita" };
+  function resolveName(name) { return NAME_ALIASES[name] || name; }
   function properCase(s) {
     return String(s).replace(/\S+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
   }
@@ -140,8 +139,7 @@
     "Shin": "Cheryl Perez", "Allan Christopher Atienza": "Allan Christopher Espano Atienza",
     "Alfe Dela Peña": "Alfe Dela Peña", "AL": "Aldwin Cua", "Renz manalo": "Renz Gozo Manalo",
     "Jesril Aguiran": "Jesril Aguiran", "Arlene Dayrit104": "Arlene Dayrit",
-    "Fanie": "Fanie Jorolan Murillo", "Richelle Relife": "Richelle Ignacio",
-    "Bry": "Bryan Manao", "🌻🌻🌻": "Benica Serapion",
+    "Fanie": "Fanie Jorolan Murillo", "Bry": "Bryan Manao",
     "John Ryan Pagunsan": "John Pagunsan", "Andrea": "Andrea Dionisio",
     "Faye Raner": "Faye Raner", "Guen Guerrero": "Guen Guerrero",
     "leadstrat eevecera": "Erica Vecera", "Arlen": "Arlen De La Vega",
@@ -167,11 +165,11 @@
     "Jhen": "2026-04-06", "Sharon": "2026-03-17", "Richelle": "2026-03-25",
     "Dianne": "2026-03-27", "Emil": "2026-04-27", "Ivy": "2026-04-20",
     "Ruel": "2026-03-22", "Nikita": "2026-04-10", "Irene": "2026-03-27",
-    "Benica": "2026-04-09", "Jha/Allan": "2026-03-31", "Liz": "2026-04-07",
+    "Benica": "2026-04-06", "Jha/Allan": "2026-03-31", "Liz": "2026-04-07",
     "Keith": "2026-04-27", "Kemberly": "2026-04-06", "Jomar": "2026-04-10",
     "Divine Grace": "2026-03-25", "Ana M": "2026-03-27", "Aubrey": "2026-04-06",
     "Larabell": "2026-03-12", "Marites": "2026-04-27", "Monica": "2026-04-27",
-    "Ryan": "2026-04-13", "Lily/Shery": "2026-03-31",
+    "Lily/Shery": "2026-03-31",
     "Nick": "2026-03-12", "Y0ng": "2026-03-12", "Sara May A. Enciso": "2026-03-12",
     "prescillgb": "2026-03-12", "Tanya": "2026-03-12", "Enrique T. Uyanguren": "2026-03-12",
     "Jonalyn Buyagon": "2026-03-12", "Sy Bby": "2026-03-13", "chin": "2026-03-20",
@@ -179,7 +177,7 @@
     "Allan Christopher Atienza": "2026-03-27", "Alfe Dela Peña": "2026-03-27",
     "AL": "2026-03-30", "Angela": "2026-03-30", "Renz manalo": "2026-03-31",
     "Jesril Aguiran": "2026-03-31", "Arlene Dayrit104": "2026-03-31", "Fanie": "2026-03-31",
-    "Richelle Relife": "2026-03-31", "Bry": "2026-04-06", "🌻🌻🌻": "2026-04-06",
+    "Bry": "2026-04-06",
     "John Ryan Pagunsan": "2026-04-06", "Andrea": "2026-04-10", "Faye Raner": "2026-04-10",
     "Guen Guerrero": "2026-04-10", "leadstrat eevecera": "2026-04-20", "Arlen": "2026-04-20",
     "talia500226": "2026-04-21", "Halaena Faith": "2026-04-21", "wengflakes": "2026-04-21",
@@ -196,7 +194,7 @@
     "Liz": "2026-04-17", "Keith": "2026-04-29", "Kemberly": "2026-04-25",
     "Jomar": "2026-04-17", "Aubrey": "2026-04-06", "Larabell": "2026-03-30",
     "Marites": "2026-04-29", "Monica": "2026-04-29", "Lily/Shery": "2026-05-08",
-    "Divine Grace": "2026-03-30", "Ana M": "2026-03-30",
+    "Divine Grace": "2026-03-30", "Ana M": "2026-03-30", "Benica": "2026-04-23",
     "Nick": "2026-03-23", "Y0ng": "2026-03-25", "Sara May A. Enciso": "2026-03-25",
     "prescillgb": "2026-03-25", "Tanya": "2026-03-30", "Enrique T. Uyanguren": "2026-04-06",
     "Jonalyn Buyagon": "2026-03-23", "Sy Bby": "2026-03-23", "chin": "2026-03-24",
@@ -204,7 +202,7 @@
     "Allan Christopher Atienza": "2026-03-28", "Alfe Dela Peña": "2026-03-30",
     "AL": "2026-04-06", "Angela": "2026-03-31", "Renz manalo": "2026-04-07",
     "Jesril Aguiran": "2026-04-09", "Arlene Dayrit104": "2026-04-06", "Fanie": "2026-03-31",
-    "Richelle Relife": "2026-04-07", "Bry": "2026-04-07", "🌻🌻🌻": "2026-04-23",
+    "Bry": "2026-04-07",
     "John Ryan Pagunsan": "2026-04-07", "Andrea": "2026-04-16", "Faye Raner": "2026-04-16",
     "Guen Guerrero": "2026-04-17", "leadstrat eevecera": "2026-04-23", "Arlen": "2026-04-29",
     "talia500226": "2026-04-23", "Halaena Faith": "2026-04-23", "wengflakes": "2026-04-23",
@@ -784,7 +782,7 @@
     profile, users, audit_log, today: dayStr(TODAY),
     // Bump this whenever the seed (agents/leads/etc.) changes — the app
     // discards a saved blob from an older seed and re-seeds from here.
-    seedVersion: 4,
+    seedVersion: 5,
   };
   window.MOCK_TODAY = TODAY;
 })();
