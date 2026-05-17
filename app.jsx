@@ -336,11 +336,15 @@ function App({ authedProfile }) {
   const lastCloudAt = React.useRef(null);
   const lastBlobJSON = React.useRef(null);
 
+  const seedVersion = () => (window.MOCK_DATA && window.MOCK_DATA.seedVersion) || 0;
   const collectState = () => ({
+    seedVersion: seedVersion(),
     campaigns, agents, leads, shiftLogs, attendanceOverrides, users, auditLog, rolePerms, userOverrides,
   });
   const applyState = (d) => {
     if (!d || typeof d !== "object") return;
+    // Discard a saved blob from an older data.js seed so seed updates take effect.
+    if ((d.seedVersion || 0) !== seedVersion()) return;
     lastBlobJSON.current = JSON.stringify(d);
     if (d.campaigns) setCampaigns(d.campaigns);
     if (d.agents) setAgents(d.agents);
