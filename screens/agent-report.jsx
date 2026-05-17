@@ -198,6 +198,12 @@ function WeeklyGrid({ weeks, grid, agents }) {
                 {a.full_name}{a.is_tl && <TLBadge small/>}
               </div>
               {visible.map(w => {
+                // Blank out weeks before the agent was hired / after they left,
+                // so empty cells only ever mean "here but logged nothing."
+                const wkNum = parseInt(String(w).replace(/\D/g, ""), 10);
+                const startWk = a.date_added ? U.weekNumber(a.date_added) : 0;
+                const endWk = a.date_removed ? U.weekNumber(a.date_removed) : 9999;
+                if (wkNum < startWk || wkNum > endWk) return <div key={w}/>;
                 const c = grid[a.id + "|" + w] || { t: 0, i: 0, c: 0 };
                 const isEmpty = c.t === 0;
                 return (
