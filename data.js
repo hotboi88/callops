@@ -8,7 +8,7 @@
 // Appointment dates: 358 ISO format, 6 empty (had invalid/missing data in original templates)
 
 (function () {
-  const TODAY = new Date(2026, 4, 15);
+  const TODAY = new Date(); // the app's "today" — tracks the real current date
   function dayStr(d) {
     const m = String(d.getMonth() + 1).padStart(2, "0");
     const dd = String(d.getDate()).padStart(2, "0");

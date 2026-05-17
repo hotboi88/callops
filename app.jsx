@@ -335,6 +335,7 @@ function App({ authedProfile }) {
   const [hydrated, setHydrated] = useStateApp(false);
   const lastCloudAt = React.useRef(null);
   const lastBlobJSON = React.useRef(null);
+  const dirtyRef = React.useRef(false); // true while local edits are unsaved
 
   const seedVersion = () => (window.MOCK_DATA && window.MOCK_DATA.seedVersion) || 0;
   const collectState = () => ({
@@ -387,7 +388,9 @@ function App({ authedProfile }) {
     const json = JSON.stringify(blob);
     if (json === lastBlobJSON.current) return; // unchanged (e.g. just applied a remote update)
     lastBlobJSON.current = json;
+    dirtyRef.current = true; // local edits pending — pauses the sync poll
     const t = setTimeout(async () => {
+      dirtyRef.current = false; // 1s with no edits — safe for the poll to resume
       try { localStorage.setItem(PERSIST_KEY, json); } catch (e) {}
       try {
         if (window.SB && window.SB.client) {
@@ -406,6 +409,7 @@ function App({ authedProfile }) {
   useEffectApp(() => {
     if (!hydrated || !window.SB || !window.SB.client) return;
     const poll = setInterval(async () => {
+      if (dirtyRef.current) return; // mid-edit on this device — don't overwrite local changes
       try {
         const { data: meta, error } = await window.SB.client
           .from("app_state").select("updated_at, updated_by").eq("id", "singleton").maybeSingle();
@@ -633,26 +637,24 @@ function App({ authedProfile }) {
   }, [pushAudit, campaigns]);
 
   const onUpdateAgent = useCallbackApp((id, updates) => {
-    setAgents(prev => {
-      const before = prev.find(a => a.id === id);
-      const next = prev.map(a => a.id === id ? { ...a, ...updates } : a);
-      if (before) {
-        const c = campaigns.find(x => x.id === before.campaign_id);
-        let desc = `Updated agent ${before.full_name}`;
-        if (updates.status === "removed") desc = `Removed agent ${before.full_name}`;
-        else if (updates.status && updates.status !== before.status) desc = `${updates.status === "active" ? "Reactivated" : "Deactivated"} agent ${before.full_name}`;
-        else if ("is_tl" in updates) desc = `${updates.is_tl ? "Promoted" : "Demoted"} ${before.full_name} ${updates.is_tl ? "to Team Lead" : "from Team Lead"}`;
-        pushAudit({
-          kind: updates.status === "removed" ? "agent.remove" : "agent.update",
-          category: "agents",
-          campaign_id: before.campaign_id,
-          campaign_name: c?.name,
-          description: desc,
-        });
-      }
-      return next;
-    });
-  }, [pushAudit, campaigns]);
+    const before = agents.find(a => a.id === id);
+    // setState updater stays pure — the audit write happens outside it.
+    setAgents(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
+    if (before) {
+      const c = campaigns.find(x => x.id === before.campaign_id);
+      let desc = `Updated agent ${before.full_name}`;
+      if (updates.status === "removed") desc = `Removed agent ${before.full_name}`;
+      else if (updates.status && updates.status !== before.status) desc = `${updates.status === "active" ? "Reactivated" : "Deactivated"} agent ${before.full_name}`;
+      else if ("is_tl" in updates) desc = `${updates.is_tl ? "Promoted" : "Demoted"} ${before.full_name} ${updates.is_tl ? "to Team Lead" : "from Team Lead"}`;
+      pushAudit({
+        kind: updates.status === "removed" ? "agent.remove" : "agent.update",
+        category: "agents",
+        campaign_id: before.campaign_id,
+        campaign_name: c?.name,
+        description: desc,
+      });
+    }
+  }, [agents, campaigns, pushAudit]);
 
   const onUpdateCampaign = useCallbackApp((updates) => {
     setCampaigns(prev => {
