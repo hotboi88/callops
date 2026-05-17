@@ -353,6 +353,11 @@ function WeeklyGrid({ campaign, leads, agents }) {
                   {a.full_name}{a.is_tl && <TLBadge small/>}
                 </div>
                 {visible.map(w => {
+                  // Blank weeks before the agent was hired / after they left.
+                  const wkNum = parseInt(String(w).replace(/\D/g, ""), 10);
+                  const startWk = a.date_added ? U.weekNumber(a.date_added) : 0;
+                  const endWk = a.date_removed ? U.weekNumber(a.date_removed) : 9999;
+                  if (wkNum < startWk || wkNum > endWk) return <div key={w}/>;
                   const c = grid[a.id + "|" + w] || { t: 0, i: 0, c: 0 };
                   const isEmpty = c.t + c.i + c.c === 0;
                   return (
