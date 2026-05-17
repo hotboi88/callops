@@ -1,7 +1,7 @@
 // Overview — first tab of every campaign. Headline KPIs, week-over-week, top performers, activity.
 const { useMemo: useMemoOV } = React;
 
-function Overview({ campaign, agents, leads, shiftLogs, onJumpTab }) {
+function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJumpTab }) {
   const today = window.MOCK_DATA?.today;
   const todayDate = window.MOCK_TODAY;
 
@@ -206,6 +206,10 @@ function Overview({ campaign, agents, leads, shiftLogs, onJumpTab }) {
         </div>
         <LeadFlowChart last14={last14} maxBar={maxBar} today={today}/>
       </div>
+
+      {/* Multi-week trend table */}
+      <WeeklyStats campaign={campaign} leads={leads} shiftLogs={shiftLogs} agents={agents} attendanceOverrides={attendanceOverrides} className="" />
+      <div style={{ height: 12 }}/>
 
       {/* 3-column row: Today · Recent activity · Top performers */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 12 }}>

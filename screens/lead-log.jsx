@@ -9,6 +9,29 @@ function LeadLog({ campaign, agents, leads, onAddLead, onUpdateLead, onDeleteLea
   const [showAdd, setShowAdd] = useStateLL(false);
   const [flashId, setFlashId] = useStateLL(null);
 
+  // Date range filter — default All so Lead Log stays a full ledger by default
+  const DAY_PRESETS = [
+    { key: "7d", label: "7d", days: 7 },
+    { key: "30d", label: "30d", days: 30 },
+    { key: "90d", label: "90d", days: 90 },
+    { key: "all", label: "All", days: null },
+  ];
+  const [dayKey, setDayKey] = useStateLL("all");
+  const [dayOffset, setDayOffset] = useStateLL(0);
+  const [customRange, setCustomRange] = useStateLL(null);
+  const [pickerOpen, setPickerOpen] = useStateLL(false);
+  const pickerBtnRef = useRefLL(null);
+  const preset = DAY_PRESETS.find(p => p.key === dayKey) || DAY_PRESETS[3];
+  const presetRange = useMemoLL(() => window.dayRange(preset.days, dayOffset), [preset.days, dayOffset]);
+  const range = customRange
+    ? { startISO: customRange.startISO, endISO: customRange.endISO, label: `${U.shortDate(customRange.startISO)} – ${U.shortDate(customRange.endISO)}` }
+    : presetRange;
+
+  // No cap — page freely backward into the past
+  useEffectLL(() => {
+    if (preset.days == null && dayOffset !== 0) setDayOffset(0);
+  }, [preset.days]);
+
   const agentsById = useMemoLL(() => {
     const m = {};
     agents.forEach(a => { m[a.id] = a; });
@@ -18,6 +41,7 @@ function LeadLog({ campaign, agents, leads, onAddLead, onUpdateLead, onDeleteLea
   // Filter pipeline
   const filtered = useMemoLL(() => {
     let arr = leads.filter(l => l.campaign_id === campaign.id);
+    if (preset.days != null || customRange) arr = arr.filter(l => l.date >= range.startISO && l.date <= range.endISO);
     if (filter !== "all") arr = arr.filter(l => l.status === filter);
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -58,16 +82,17 @@ function LeadLog({ campaign, agents, leads, onAddLead, onUpdateLead, onDeleteLea
       return 0;
     });
     return arr;
-  }, [leads, campaign.id, filter, search, sort, agentsById]);
+  }, [leads, campaign.id, filter, search, sort, agentsById, range, preset.days, customRange]);
 
   const counts = useMemoLL(() => {
     const c = { all: 0, pending: 0, transfer: 0, confirmed: 0, ia: 0, dnc: 0, bad: 0 };
     leads.forEach(l => {
       if (l.campaign_id !== campaign.id) return;
+      if ((preset.days != null || customRange) && (l.date < range.startISO || l.date > range.endISO)) return;
       c.all++; c[l.status] = (c[l.status] || 0) + 1;
     });
     return c;
-  }, [leads, campaign.id]);
+  }, [leads, campaign.id, range, preset.days, customRange]);
 
   const handleSort = (col) => {
     setSort(s => s.col === col ? { col, dir: s.dir === "asc" ? "desc" : "asc" } : { col, dir: "desc" });
@@ -80,6 +105,58 @@ function LeadLog({ campaign, agents, leads, onAddLead, onUpdateLead, onDeleteLea
 
   return (
     <div className="tab-content">
+      {/* Date range nav */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10, gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        {customRange ? (
+          <>
+            <button
+              ref={pickerBtnRef}
+              className="chip active"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+              onClick={() => setPickerOpen(o => !o)}
+              title="Click to change dates"
+            >
+              <Icon name="calendar" size={11}/>
+              {U.shortDate(customRange.startISO)} – {U.shortDate(customRange.endISO)}
+            </button>
+            <button className="icon-btn" title="Clear custom range" onClick={() => setCustomRange(null)}>
+              <Icon name="x" size={12}/>
+            </button>
+          </>
+        ) : (
+          <>
+            <RangeNav
+              options={DAY_PRESETS}
+              value={dayKey}
+              onChange={(k) => { setDayKey(k); setDayOffset(0); }}
+              rangeLabel={range.label}
+              canBack={preset.days != null}
+              canForward={preset.days != null && dayOffset > 0}
+              onBack={() => setDayOffset(o => o + 1)}
+              onForward={() => setDayOffset(o => Math.max(0, o - 1))}
+              onReset={() => setDayOffset(0)}
+              canReset={dayOffset !== 0}
+            />
+            <button
+              ref={pickerBtnRef}
+              className="chip"
+              style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+              onClick={() => setPickerOpen(o => !o)}
+            >
+              <Icon name="calendar" size={11}/>
+              Pick dates…
+            </button>
+          </>
+        )}
+        <DateRangePicker
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          anchorRef={pickerBtnRef}
+          value={customRange || (preset.days != null ? presetRange : null)}
+          onChange={(r) => { setCustomRange(r); setDayOffset(0); }}
+        />
+      </div>
+
       {/* Toolbar */}
       <div className="toolbar">
         <div className="filter-chips">

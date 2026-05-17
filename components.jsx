@@ -84,38 +84,36 @@ function Modal({ open, onClose, title, children, footer, width }) {
 
 // ---------- Popover (positioned relative to an anchor) ----------
 function Popover({ open, anchorRef, onClose, children, align = "start" }) {
-  // Compute initial position synchronously from the anchor's current rect
-  // so the popover paints in the right place on first frame (no visible "jump").
-  const initialPos = () => {
+  // Compute position from the anchor's rect, clamped to the viewport.
+  const computePos = (popEl) => {
     const a = anchorRef?.current;
     if (!a) return { top: 0, left: 0 };
     const r = a.getBoundingClientRect();
     const top = r.bottom + window.scrollY + 4;
+    const popW = popEl ? popEl.offsetWidth : 280;
     let left = r.left + window.scrollX;
-    if (align === "end") left = r.right + window.scrollX - 180;
+    if (align === "end") left = r.right + window.scrollX - popW;
+    const maxLeft = window.scrollX + window.innerWidth - popW - 8;
+    const minLeft = window.scrollX + 8;
+    if (left > maxLeft) left = maxLeft;
+    if (left < minLeft) left = minLeft;
     return { top, left };
   };
-  const [pos, setPos] = useState(initialPos);
+  const [pos, setPos] = useState(() => computePos(null));
   const popRef = useRef(null);
-  // Re-measure with useLayoutEffect (runs before paint) when open flips on.
-  // Uses the popover's actual rendered width so align="end" lines the right
-  // edges up exactly, then clamps so the menu never spills off-screen.
   React.useLayoutEffect(() => {
     if (!open || !anchorRef?.current) return;
-    const r = anchorRef.current.getBoundingClientRect();
-    const pw = popRef.current ? popRef.current.offsetWidth : 180;
-    const top = r.bottom + window.scrollY + 4;
-    let left = align === "end"
-      ? r.right + window.scrollX - pw
-      : r.left + window.scrollX;
-    const minLeft = window.scrollX + 8;
-    const maxLeft = window.scrollX + window.innerWidth - pw - 8;
-    left = Math.max(minLeft, Math.min(left, maxLeft));
-    setPos({ top, left });
+    setPos(computePos(popRef.current));
+    const id = requestAnimationFrame(() => setPos(computePos(popRef.current)));
+    return () => cancelAnimationFrame(id);
   }, [open, anchorRef, align]);
   useEffect(() => {
     if (!open) return;
     const onClick = (e) => {
+      // Don't close if the click landed inside ANY popover (nested popovers are
+      // portaled into body so they're not children of this one). closest('.popover')
+      // catches sibling popovers.
+      if (e.target.closest && e.target.closest(".popover")) return;
       if (popRef.current && !popRef.current.contains(e.target) &&
           anchorRef.current && !anchorRef.current.contains(e.target)) {
         onClose && onClose();
@@ -528,4 +526,729 @@ function Select({ value, onChange, options, placeholder = "Select…", disabled 
   );
 }
 
-Object.assign(window, { Icon, Pill, Modal, Popover, TLBadge, Money, Kpi, Sparkline, DatePicker, TimePicker, Select });
+// ---------- RangeNav ----------
+// Shared time-range control: prev/next arrows around a centered label,
+// optional "Today" reset, and a set of preset chips. Stateless — each
+// consumer owns its preset + offset state.
+function RangeNav({
+  options, value, onChange,
+  rangeLabel,
+  canBack, canForward, onBack, onForward,
+  onReset, canReset,
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <div className="row" style={{ gap: 4 }}>
+        <button
+          className="icon-btn"
+          onClick={onBack}
+          disabled={!canBack}
+          style={!canBack ? { opacity: 0.35, cursor: "not-allowed" } : {}}
+          title="Earlier"
+        >
+          <Icon name="arrowLeft" size={13}/>
+        </button>
+        <div style={{
+          minWidth: 168,
+          textAlign: "center",
+          fontSize: 12.5,
+          padding: "0 10px",
+          color: "var(--text)",
+          fontFamily: "Geist Mono, monospace",
+          fontVariantNumeric: "tabular-nums",
+          letterSpacing: "-0.01em",
+        }}>{rangeLabel}</div>
+        <button
+          className="icon-btn"
+          onClick={onForward}
+          disabled={!canForward}
+          style={!canForward ? { opacity: 0.35, cursor: "not-allowed" } : {}}
+          title="Later"
+        >
+          <Icon name="chevronRight" size={13}/>
+        </button>
+      </div>
+      {onReset && (
+        <button
+          className="btn btn-sm"
+          onClick={onReset}
+          disabled={!canReset}
+          style={!canReset ? { opacity: 0.35, cursor: "default" } : {}}
+        >Today</button>
+      )}
+      <div className="filter-chips">
+        {options.map(o => (
+          <button
+            key={o.key}
+            className={"chip" + (value === o.key ? " active" : "")}
+            onClick={() => onChange(o.key)}
+          >{o.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Compute a day-based range ending at (today - dayOffset*days). days=null → All-time.
+function dayRange(days, dayOffset) {
+  if (days == null) {
+    return { startISO: "0000-01-01", endISO: "9999-12-31", label: "All time" };
+  }
+  const end = new Date(window.MOCK_TODAY);
+  end.setDate(end.getDate() - dayOffset);
+  const start = new Date(end);
+  start.setDate(start.getDate() - days + 1);
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const sameYear = start.getFullYear() === end.getFullYear();
+  const sameMonth = sameYear && start.getMonth() === end.getMonth();
+  let label;
+  if (sameMonth) label = `${MONTHS[start.getMonth()]} ${start.getDate()}–${end.getDate()}, ${end.getFullYear()}`;
+  else if (sameYear) label = `${MONTHS[start.getMonth()]} ${start.getDate()} – ${MONTHS[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
+  else label = `${MONTHS[start.getMonth()]} ${start.getDate()}, ${start.getFullYear()} – ${MONTHS[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
+  return { startISO: U.dayStr(start), endISO: U.dayStr(end), label };
+}
+
+// Compute a month-based range ending at the current month - (monthOffset*months).
+// months=null → All-time. Range always covers whole calendar months.
+function monthRange(months, monthOffset) {
+  if (months == null) {
+    return { startISO: "0000-01-01", endISO: "9999-12-31", label: "All time" };
+  }
+  const today = window.MOCK_TODAY;
+  const endMonth = new Date(today.getFullYear(), today.getMonth() - monthOffset * months, 1);
+  const startMonth = new Date(endMonth.getFullYear(), endMonth.getMonth() - months + 1, 1);
+  const endLast = new Date(endMonth.getFullYear(), endMonth.getMonth() + 1, 0);
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  let label;
+  if (months === 1) label = `${MONTHS[startMonth.getMonth()]} ${startMonth.getFullYear()}`;
+  else if (startMonth.getFullYear() === endLast.getFullYear()) label = `${MONTHS[startMonth.getMonth()]} – ${MONTHS[endLast.getMonth()]} ${endLast.getFullYear()}`;
+  else label = `${MONTHS[startMonth.getMonth()]} ${startMonth.getFullYear()} – ${MONTHS[endLast.getMonth()]} ${endLast.getFullYear()}`;
+  return { startISO: U.dayStr(startMonth), endISO: U.dayStr(endLast), label };
+}
+
+// ---------- MonthRangePicker ----------
+// Popover with a year navigator + 3×4 month grid. Click first month → start,
+// click second → end (auto-swaps so order doesn't matter). Used by WeeklyStats.
+function MonthRangePicker({ open, onClose, anchorRef, value, onChange }) {
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  const initYear = value?.startISO
+    ? U.parseDate(value.startISO).getFullYear()
+    : (window.MOCK_TODAY || new Date()).getFullYear();
+  const [viewYear, setViewYear] = useState(initYear);
+  const [pendingN, setPendingN] = useState(null);
+  const [hoverN, setHoverN] = useState(null);
+
+  useEffect(() => {
+    if (open) {
+      setPendingN(null);
+      setHoverN(null);
+      const sy = value?.startISO ? U.parseDate(value.startISO).getFullYear() : (window.MOCK_TODAY || new Date()).getFullYear();
+      setViewYear(sy);
+    }
+  }, [open]);
+
+  const enc = (d) => d.getFullYear() * 12 + d.getMonth();
+  const valStartN = value?.startISO ? enc(U.parseDate(value.startISO)) : null;
+  const valEndN = value?.endISO ? enc(U.parseDate(value.endISO)) : null;
+
+  const showStart = pendingN != null
+    ? Math.min(pendingN, hoverN != null ? hoverN : pendingN)
+    : valStartN;
+  const showEnd = pendingN != null
+    ? Math.max(pendingN, hoverN != null ? hoverN : pendingN)
+    : valEndN;
+
+  const todayN = enc(window.MOCK_TODAY || new Date());
+
+  const handleClick = (m) => {
+    const n = viewYear * 12 + m;
+    if (pendingN == null) {
+      setPendingN(n);
+      setHoverN(n);
+    } else {
+      const start = Math.min(pendingN, n);
+      const end = Math.max(pendingN, n);
+      const sY = Math.floor(start / 12), sM = start % 12;
+      const eY = Math.floor(end / 12), eM = end % 12;
+      const startDate = new Date(sY, sM, 1);
+      const endDate = new Date(eY, eM + 1, 0); // last day of end month
+      onChange({ startISO: U.dayStr(startDate), endISO: U.dayStr(endDate) });
+      setPendingN(null);
+      setHoverN(null);
+      onClose && onClose();
+    }
+  };
+
+  return (
+    <Popover open={open} onClose={onClose} anchorRef={anchorRef} align="end">
+      <div style={{ padding: 14, minWidth: 280 }}>
+        <div className="row" style={{ alignItems: "center", marginBottom: 12 }}>
+          <button className="icon-btn" onClick={() => setViewYear(y => y - 1)} title="Earlier year">
+            <Icon name="arrowLeft" size={13}/>
+          </button>
+          <div style={{
+            flex: 1, textAlign: "center", fontSize: 14, fontWeight: 600,
+            color: "var(--text)", fontFamily: "Geist Mono, monospace",
+            fontVariantNumeric: "tabular-nums",
+          }}>{viewYear}</div>
+          <button className="icon-btn" onClick={() => setViewYear(y => y + 1)} title="Later year">
+            <Icon name="chevronRight" size={13}/>
+          </button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+          {MONTHS.map((label, m) => {
+            const n = viewYear * 12 + m;
+            const inRange = showStart != null && n >= showStart && n <= showEnd;
+            const isStart = showStart != null && n === showStart;
+            const isEnd = showEnd != null && n === showEnd;
+            const isEndpoint = isStart || isEnd;
+            const isToday = n === todayN;
+            return (
+              <button
+                key={m}
+                onMouseEnter={() => { if (pendingN != null) setHoverN(n); }}
+                onClick={() => handleClick(m)}
+                style={{
+                  padding: "10px 8px",
+                  fontSize: 12,
+                  fontFamily: "Geist Mono, monospace",
+                  fontWeight: isEndpoint ? 600 : 400,
+                  border: "1px solid " + (isEndpoint ? "var(--accent-line)" : isToday ? "var(--border-strong)" : "var(--border-subtle)"),
+                  borderRadius: 6,
+                  background: isEndpoint ? "var(--accent-soft)" : inRange ? "var(--bg-panel-2)" : "var(--bg-panel)",
+                  color: isEndpoint || inRange ? "var(--accent)" : isToday ? "var(--text)" : "var(--text-2)",
+                  cursor: "pointer",
+                  transition: "background-color 80ms",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ marginTop: 12, fontSize: 11, color: "var(--text-4)", lineHeight: 1.5 }}>
+          {pendingN == null
+            ? "Click a month to start. Click a second month to complete the range."
+            : "Now click an ending month — navigate years with the arrows."}
+        </div>
+      </div>
+    </Popover>
+  );
+}
+
+// ---------- DateRangePicker ----------
+// Inline single-month day calendar in a popover. Click first day → start,
+// click second → end (auto-swaps). Used by day-based reports.
+function DateRangePicker({ open, onClose, anchorRef, value, onChange }) {
+  const today = window.MOCK_TODAY || new Date();
+  const initDate = value?.startISO ? U.parseDate(value.startISO) : today;
+  const [viewYear, setViewYear] = useState(initDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initDate.getMonth());
+  const [pending, setPending] = useState(null);
+  const [hover, setHover] = useState(null);
+
+  useEffect(() => {
+    if (open) {
+      setPending(null); setHover(null);
+      const d = value?.startISO ? U.parseDate(value.startISO) : today;
+      setViewYear(d.getFullYear()); setViewMonth(d.getMonth());
+    }
+  }, [open]);
+
+  const showStart = pending != null
+    ? (pending < (hover || pending) ? pending : (hover || pending))
+    : (value?.startISO || null);
+  const showEnd = pending != null
+    ? (pending > (hover || pending) ? pending : (hover || pending))
+    : (value?.endISO || null);
+
+  const grid = useMemo(() => {
+    const first = new Date(viewYear, viewMonth, 1);
+    const startDow = first.getDay();
+    const out = [];
+    for (let i = 0; i < startDow; i++) {
+      const d = new Date(viewYear, viewMonth, -startDow + i + 1);
+      out.push({ d, dim: true });
+    }
+    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+    for (let i = 1; i <= daysInMonth; i++) {
+      out.push({ d: new Date(viewYear, viewMonth, i), dim: false });
+    }
+    while (out.length < 42) {
+      const last = out[out.length - 1].d;
+      const next = new Date(last); next.setDate(next.getDate() + 1);
+      out.push({ d: next, dim: true });
+    }
+    return out;
+  }, [viewYear, viewMonth]);
+
+  const goPrev = () => { let y = viewYear, m = viewMonth - 1; if (m < 0) { m = 11; y -= 1; } setViewYear(y); setViewMonth(m); };
+  const goNext = () => { let y = viewYear, m = viewMonth + 1; if (m > 11) { m = 0; y += 1; } setViewYear(y); setViewMonth(m); };
+
+  const handleClick = (d) => {
+    const iso = U.dayStr(d);
+    if (pending == null) {
+      setPending(iso); setHover(iso);
+    } else {
+      const startISO = pending < iso ? pending : iso;
+      const endISO = pending > iso ? pending : iso;
+      onChange({ startISO, endISO });
+      setPending(null); setHover(null);
+      onClose && onClose();
+    }
+  };
+
+  const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const DOWS = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+  const todayISO = U.dayStr(today);
+
+  return (
+    <Popover open={open} onClose={onClose} anchorRef={anchorRef} align="end">
+      <div style={{ padding: 14, minWidth: 280 }}>
+        <div className="row" style={{ alignItems: "center", marginBottom: 10 }}>
+          <button className="icon-btn" onClick={goPrev} title="Previous month">
+            <Icon name="arrowLeft" size={13}/>
+          </button>
+          <div style={{ flex: 1, textAlign: "center", fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+            {MONTHS[viewMonth]}
+            <span style={{ fontFamily: "Geist Mono, monospace", color: "var(--text-3)", marginLeft: 6, fontWeight: 500 }}>{viewYear}</span>
+          </div>
+          <button className="icon-btn" onClick={goNext} title="Next month">
+            <Icon name="chevronRight" size={13}/>
+          </button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, fontSize: 10, color: "var(--text-3)", marginBottom: 4, fontWeight: 500 }}>
+          {DOWS.map(d => <div key={d} style={{ textAlign: "center" }}>{d}</div>)}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+          {grid.map((c, i) => {
+            const iso = U.dayStr(c.d);
+            const inRange = showStart && showEnd && iso >= showStart && iso <= showEnd;
+            const isStart = showStart && iso === showStart;
+            const isEnd = showEnd && iso === showEnd;
+            const isEndpoint = isStart || isEnd;
+            const isToday = iso === todayISO;
+            return (
+              <button
+                key={i}
+                onMouseEnter={() => { if (pending != null) setHover(iso); }}
+                onClick={() => handleClick(c.d)}
+                style={{
+                  fontSize: 12, padding: "6px 0",
+                  fontFamily: "Geist Mono, monospace",
+                  fontVariantNumeric: "tabular-nums",
+                  fontWeight: isEndpoint || isToday ? 600 : 400,
+                  border: "1px solid " + (isEndpoint ? "var(--accent-line)" : isToday ? "var(--border-strong)" : "transparent"),
+                  borderRadius: 4,
+                  background: isEndpoint ? "var(--accent-soft)" : inRange ? "var(--bg-panel-2)" : "transparent",
+                  color: isEndpoint || inRange ? "var(--accent)" : c.dim ? "var(--text-4)" : "var(--text-2)",
+                  cursor: "pointer",
+                }}
+              >
+                {c.d.getDate()}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ marginTop: 10, fontSize: 11, color: "var(--text-4)", lineHeight: 1.5 }}>
+          {pending == null
+            ? "Click a day to start. Click a second day to set the range."
+            : "Now click an ending day — use arrows to navigate months."}
+        </div>
+      </div>
+    </Popover>
+  );
+}
+
+// ---------- WeeklyStats ----------
+// Multi-week rollup table with inline conversion bar + totals footer that
+// MIRRORS THE VISIBLE RANGE. Shared by Overview and Floor Report.
+// Default 3 months (overridable via defaultPresetKey); presets [1mo, 3mo, 6mo,
+// 1yr, All]; plus a "Pick months…" chip that opens a MonthRangePicker for
+// arbitrary spans. No offset caps — user can page indefinitely back through history.
+function WeeklyStats({ campaign, leads, shiftLogs, agents, attendanceOverrides, title = "Weekly stats", className = "", defaultPresetKey = "3m" }) {
+  const camLeads = useMemo(() => leads.filter(l => l.campaign_id === campaign.id), [leads, campaign.id]);
+
+  const PRESETS = [
+    { key: "1m", label: "1mo", months: 1 },
+    { key: "3m", label: "3mo", months: 3 },
+    { key: "6m", label: "6mo", months: 6 },
+    { key: "12m", label: "1yr", months: 12 },
+    { key: "all", label: "All", months: null },
+  ];
+  const [presetKey, setPresetKey] = useState(defaultPresetKey);
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [customRange, setCustomRange] = useState(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerBtnRef = useRef(null);
+  const preset = PRESETS.find(p => p.key === presetKey) || PRESETS[1];
+  const presetRange = useMemo(() => monthRange(preset.months, monthOffset), [preset.months, monthOffset]);
+
+  const customLabel = useMemo(() => {
+    if (!customRange) return null;
+    const M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const s = U.parseDate(customRange.startISO);
+    const e = U.parseDate(customRange.endISO);
+    if (!s || !e) return null;
+    const sameYear = s.getFullYear() === e.getFullYear();
+    const sameMonth = sameYear && s.getMonth() === e.getMonth();
+    if (sameMonth) return `${M[s.getMonth()]} ${s.getFullYear()}`;
+    if (sameYear)  return `${M[s.getMonth()]} – ${M[e.getMonth()]} ${e.getFullYear()}`;
+    return `${M[s.getMonth()]} ${s.getFullYear()} – ${M[e.getMonth()]} ${e.getFullYear()}`;
+  }, [customRange]);
+
+  const range = customRange
+    ? { startISO: customRange.startISO, endISO: customRange.endISO, label: customLabel || "Custom" }
+    : presetRange;
+
+  // No offset cap — user can page back as far as they want, even past the campaign start
+  useEffect(() => {
+    if (preset.months == null && monthOffset !== 0) setMonthOffset(0);
+  }, [preset.months]);
+
+  const inRange = (date) => date >= range.startISO && date <= range.endISO;
+  const rangeLeads = useMemo(() => camLeads.filter(l => inRange(l.date)), [camLeads, range]);
+  const rangeShifts = useMemo(
+    () => (shiftLogs || []).filter(s => s.campaign_id === campaign.id && inRange(s.date)),
+    [shiftLogs, campaign.id, range]
+  );
+
+  // Active roster + per-day present-count helper (Avg Floor is derived from
+  // attendance — count of agents with status="present" for each day).
+  const camAgents = useMemo(
+    () => (agents || []).filter(a => a.campaign_id === campaign.id && a.status === "active"),
+    [agents, campaign.id]
+  );
+  const leadDays = useMemo(() => {
+    const m = {};
+    camLeads.forEach(l => { m[l.agent_id + "|" + l.date] = true; });
+    return m;
+  }, [camLeads]);
+  const presentCountFor = (date) => {
+    if (!camAgents.length) return null;
+    let n = 0;
+    camAgents.forEach(a => {
+      const key = a.id + "|" + date;
+      const ov = attendanceOverrides && attendanceOverrides[key];
+      let status;
+      if (ov) status = ov;
+      else if (a.date_added && date < a.date_added) status = "off";
+      else if (leadDays[key]) status = "present";
+      else {
+        const dow = U.parseDate(date).getDay();
+        status = (dow === 0 || dow === 6) ? "off" : "absent";
+      }
+      if (status === "present") n++;
+    });
+    return n;
+  };
+
+  // Floor Totals — MIRROR visible range
+  const totals = useMemo(() => {
+    const t = { total: 0, pending: 0, transfer: 0, confirmed: 0, ia: 0, dnc: 0, bad: 0, bill: 0 };
+    const dayBag = new Set();
+    rangeLeads.forEach(l => {
+      t.total++; t[l.status]++;
+      t.bill += l.client_commission || 0;
+      dayBag.add(l.date);
+    });
+    t.activeDays = dayBag.size;
+    t.convRate = t.total > 0 ? (t.ia + t.confirmed) / t.total : 0;
+    return t;
+  }, [rangeLeads]);
+
+  const weeks = useMemo(() => {
+    const map = {};
+    const ensure = (date) => {
+      const yr = U.parseDate(date).getFullYear();
+      const wk = U.weekNumber(date);
+      const key = yr + "-W" + String(wk).padStart(2, "0");
+      return (map[key] ||= {
+        key, year: yr, week: wk,
+        start: date, end: date,
+        total: 0, pending: 0, transfer: 0, confirmed: 0, ia: 0, dnc: 0, bad: 0,
+        bill: 0, _days: new Set(),
+      });
+    };
+    rangeLeads.forEach(l => {
+      const r = ensure(l.date);
+      r.total++; r[l.status]++;
+      r.bill += l.client_commission || 0;
+      r._days.add(l.date);
+      if (l.date < r.start) r.start = l.date;
+      if (l.date > r.end) r.end = l.date;
+    });
+    rangeShifts.forEach(s => {
+      const r = ensure(s.date);
+      if (s.date < r.start) r.start = s.date;
+      if (s.date > r.end) r.end = s.date;
+    });
+    const result = Object.values(map).map(r => {
+      const dates = Array.from(r._days);
+      let presentSum = 0, presentDays = 0;
+      if (camAgents.length) {
+        dates.forEach(d => {
+          const n = presentCountFor(d);
+          if (n != null) { presentSum += n; presentDays++; }
+        });
+      }
+      return {
+        ...r,
+        activeDays: r._days.size,
+        avgFloor: presentDays > 0 ? presentSum / presentDays : null,
+        convRate: r.total > 0 ? (r.ia + r.confirmed) / r.total : 0,
+      };
+    });
+    return result.sort((a, b) => b.key.localeCompare(a.key));
+  }, [rangeLeads, rangeShifts, camAgents, attendanceOverrides, leadDays]);
+
+  const maxWeekBill = useMemo(() => Math.max(1, ...weeks.map(w => w.bill)), [weeks]);
+
+  const weekRange = (startISO, endISO) => {
+    const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const s = U.parseDate(startISO), e = U.parseDate(endISO);
+    if (!s || !e) return "";
+    if (s.getMonth() === e.getMonth()) return `${MONTHS[s.getMonth()]} ${s.getDate()}–${e.getDate()}`;
+    return `${MONTHS[s.getMonth()]} ${s.getDate()} – ${MONTHS[e.getMonth()]} ${e.getDate()}`;
+  };
+
+  return (
+    <div className={"card " + className} style={{ padding: "16px 18px" }}>
+      <div className="spread" style={{ marginBottom: 12, alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
+            {title}
+            <span style={{ marginLeft: 8, fontSize: 11, color: "var(--text-3)", fontWeight: 400 }}>
+              · conversion = (IA + Confirmed) ÷ Total
+            </span>
+          </h3>
+          <div style={{ display: "flex", gap: 14, fontSize: 11, color: "var(--text-3)", marginTop: 6, flexWrap: "wrap" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 9, height: 9, borderRadius: 2, background: "var(--status-transfer-fg)" }}/> Transfers
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 9, height: 9, borderRadius: 2, background: "var(--status-ia-fg)" }}/> IAs
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 9, height: 9, borderRadius: 2, background: "var(--money-pos)" }}/> Confirms
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 9, height: 9, borderRadius: 2, background: "var(--status-dnc-fg)" }}/> DNC
+            </span>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {customRange ? (
+            <>
+              <button
+                ref={pickerBtnRef}
+                className="chip active"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                onClick={() => setPickerOpen(o => !o)}
+                title="Click to change months"
+              >
+                <Icon name="calendar" size={11}/>
+                {customLabel}
+              </button>
+              <button
+                className="icon-btn"
+                title="Clear custom range, return to preset"
+                onClick={() => setCustomRange(null)}
+              >
+                <Icon name="x" size={12}/>
+              </button>
+            </>
+          ) : (
+            <>
+              <RangeNav
+                options={PRESETS}
+                value={presetKey}
+                onChange={(k) => { setPresetKey(k); setMonthOffset(0); }}
+                rangeLabel={range.label}
+                canBack={preset.months != null}
+                canForward={preset.months != null && monthOffset > 0}
+                onBack={() => setMonthOffset(o => o + 1)}
+                onForward={() => setMonthOffset(o => Math.max(0, o - 1))}
+                onReset={() => setMonthOffset(0)}
+                canReset={monthOffset !== 0}
+              />
+              <button
+                ref={pickerBtnRef}
+                className="chip"
+                style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+                onClick={() => setPickerOpen(o => !o)}
+              >
+                <Icon name="calendar" size={11}/>
+                Pick months…
+              </button>
+            </>
+          )}
+          <MonthRangePicker
+            open={pickerOpen}
+            onClose={() => setPickerOpen(false)}
+            anchorRef={pickerBtnRef}
+            value={customRange || presetRange}
+            onChange={(r) => { setCustomRange(r); setMonthOffset(0); }}
+          />
+        </div>
+      </div>
+      {weeks.length === 0 ? (
+        <div className="empty" style={{ padding: "22px 0" }}>
+          <h3 style={{ fontSize: 13, margin: "0 0 4px" }}>No weeks in this range</h3>
+          <p style={{ fontSize: 12 }}>Pick a wider window or page backward.</p>
+        </div>
+      ) : (
+        <div className="table-wrap" style={{ border: "none", background: "transparent" }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th style={{ width: 64 }}>Week</th>
+                <th style={{ width: 110 }}>Range</th>
+                <th className="num" style={{ width: 70 }}>Days</th>
+                <th className="num" style={{ width: 90 }}>Avg Floor</th>
+                <th className="num" style={{ width: 80 }}>Total</th>
+                <th className="num" style={{ width: 90 }}>Transfers</th>
+                <th className="num" style={{ width: 70 }}>IAs</th>
+                <th className="num" style={{ width: 80 }}>Confirms</th>
+                <th className="num" style={{ width: 70 }}>DNC</th>
+                <th style={{ width: 210 }}>Conversion</th>
+                <th className="num" style={{ width: 110 }}>Bill</th>
+              </tr>
+            </thead>
+            <tbody>
+              {weeks.map((w, i) => {
+                const isCurrent = i === 0;
+                const iaShare = w.total > 0 ? w.ia / w.total : 0;
+                const cnfShare = w.total > 0 ? w.confirmed / w.total : 0;
+                const billShare = w.bill / maxWeekBill;
+                return (
+                  <tr key={w.key}>
+                    <td className="num-l">
+                      <span className="mono" style={{ color: isCurrent ? "var(--accent)" : "var(--text)", fontWeight: 600 }}>WK{w.week}</span>
+                      {isCurrent && (
+                        <span className="tag tag-tl" style={{ marginLeft: 6, height: 16, padding: "0 5px", fontSize: 9 }}>current</span>
+                      )}
+                    </td>
+                    <td className="muted-2" style={{ fontSize: 11.5 }}>
+                      <span className="mono" style={{ color: "var(--text-2)" }}>{weekRange(w.start, w.end)}</span>
+                    </td>
+                    <td className="num"><span className={w.activeDays ? "money" : "money money-muted"}>{w.activeDays || "—"}</span></td>
+                    <td className="num">
+                      {w.avgFloor != null ? (
+                        <span className="money money-bold">{w.avgFloor.toFixed(1)}</span>
+                      ) : <span className="money money-muted">—</span>}
+                    </td>
+                    <td className="num"><span className="money money-bold">{w.total || "—"}</span></td>
+                    <td className="num"><span className={w.transfer ? "money" : "money money-muted"} style={w.transfer ? { color: "var(--status-transfer-fg)" } : {}}>{w.transfer || "—"}</span></td>
+                    <td className="num"><span className={w.ia ? "money money-tl" : "money money-muted"}>{w.ia || "—"}</span></td>
+                    <td className="num"><span className={w.confirmed ? "money money-pos" : "money money-muted"}>{w.confirmed || "—"}</span></td>
+                    <td className="num"><span className={w.dnc ? "money" : "money money-muted"} style={w.dnc ? { color: "var(--status-dnc-fg)" } : {}}>{w.dnc || "—"}</span></td>
+                    <td>
+                      <ConvBar iaShare={iaShare} cnfShare={cnfShare} convRate={w.convRate} total={w.total} count={w.ia + w.confirmed}/>
+                    </td>
+                    <td className="num" style={{ position: "relative" }}>
+                      {w.bill > 0 && (
+                        <div style={{
+                          position: "absolute", left: 0, right: 0, bottom: 4, height: 2,
+                          background: "var(--bg-panel-2)", margin: "0 10px",
+                        }}>
+                          <div style={{ width: (billShare * 100) + "%", height: "100%", background: "var(--money-pos)", opacity: 0.55 }}/>
+                        </div>
+                      )}
+                      <span className={w.bill ? "money money-pos money-bold" : "money money-muted"}>
+                        {w.bill ? U.fmtMoney(w.bill) : "—"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            {/* Floor totals — mirror visible range — totals footer */}
+            <tfoot>
+              <tr>
+                <td colSpan={2}>
+                  <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                    <span style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600 }}>Floor Totals</span>
+                    <span style={{ fontSize: 10.5, color: "var(--text-4)", fontWeight: 400 }}>
+                      {range.label} · {totals.activeDays} active day{totals.activeDays === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                </td>
+                <td className="num"><span className="money money-bold">{totals.activeDays || "—"}</span></td>
+                <td className="num"><span className="money money-muted">—</span></td>
+                <td className="num"><span className="money money-bold">{U.fmtNum(totals.total)}</span></td>
+                <td className="num"><span className={totals.transfer ? "money" : "money money-muted"} style={totals.transfer ? { color: "var(--status-transfer-fg)" } : {}}>{totals.transfer || "—"}</span></td>
+                <td className="num"><span className={totals.ia ? "money money-tl money-bold" : "money money-muted"}>{totals.ia || "—"}</span></td>
+                <td className="num"><span className={totals.confirmed ? "money money-pos money-bold" : "money money-muted"}>{totals.confirmed || "—"}</span></td>
+                <td className="num"><span className={totals.dnc ? "money" : "money money-muted"} style={totals.dnc ? { color: "var(--status-dnc-fg)" } : {}}>{totals.dnc || "—"}</span></td>
+                <td>
+                  <ConvBar
+                    iaShare={totals.total > 0 ? totals.ia / totals.total : 0}
+                    cnfShare={totals.total > 0 ? totals.confirmed / totals.total : 0}
+                    convRate={totals.convRate}
+                    total={totals.total}
+                    count={totals.ia + totals.confirmed}
+                  />
+                </td>
+                <td className="num">
+                  <span className={totals.bill ? "money money-pos money-bold" : "money money-muted"}>
+                    {totals.bill ? U.fmtMoney(totals.bill) : "—"}
+                  </span>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Inline conversion bar — count · IA segment + Confirmed segment · %.
+function ConvBar({ iaShare, cnfShare, convRate, total, count }) {
+  if (!total) return <span className="muted-2 mono" style={{ fontSize: 11 }}>—</span>;
+  const pctColor =
+    iaShare >= cnfShare && iaShare > 0 ? "var(--status-ia-fg)" :
+    cnfShare > 0 ? "var(--money-pos)" :
+    "var(--text-3)";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      {count != null && (
+        <span
+          className="mono"
+          title="IAs + Confirms"
+          style={{
+            minWidth: 24, textAlign: "right", fontSize: 12, fontWeight: 600,
+            color: count > 0 ? "var(--text)" : "var(--text-4)",
+            fontVariantNumeric: "tabular-nums", letterSpacing: "-0.01em",
+          }}
+        >
+          {count || "—"}
+        </span>
+      )}
+      <div
+        title={`IA ${Math.round(iaShare * 100)}% · Confirmed ${Math.round(cnfShare * 100)}%`}
+        style={{
+          flex: 1, minWidth: 60, height: 6, borderRadius: 3,
+          background: "var(--bg-panel-2)", display: "flex", overflow: "hidden",
+          border: "1px solid var(--border-subtle)",
+        }}
+      >
+        {iaShare > 0 && <div style={{ width: (iaShare * 100) + "%", background: "var(--status-ia-fg)" }}/>}
+        {cnfShare > 0 && <div style={{ width: (cnfShare * 100) + "%", background: "var(--money-pos)" }}/>}
+      </div>
+      <span
+        className="mono"
+        style={{
+          minWidth: 36, textAlign: "right", fontSize: 12, fontWeight: 600,
+          color: pctColor, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.01em",
+        }}
+      >
+        {Math.round(convRate * 100)}%
+      </span>
+    </div>
+  );
+}
+
+Object.assign(window, { Icon, Pill, Modal, Popover, TLBadge, Money, Kpi, Sparkline, DatePicker, TimePicker, Select, WeeklyStats, ConvBar, RangeNav, dayRange, monthRange, MonthRangePicker, DateRangePicker });

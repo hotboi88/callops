@@ -1,151 +1,139 @@
-// Floor Report — daily stats + attendance
-const { useState: useStateFR, useMemo: useMemoFR } = React;
+// Floor Report — weekly trend + daily floor stats (attendance lives in its own tab)
+const { useState: useStateFR, useMemo: useMemoFR, useEffect: useEffectFR, useRef: useRefFR } = React;
 
-function FloorReport({ campaign, agents, leads, shiftLogs, attendanceOverrides, onLogShift, onSetAttendance }) {
-  const [newShiftDate, setNewShiftDate] = useStateFR(window.MOCK_DATA?.today);
-  const [newShiftCount, setNewShiftCount] = useStateFR("");
-  const [attDays, setAttDays] = useStateFR(14);
-  // Offset in days from today to the end of the attendance window. 0 = ends today.
-  const [attOffset, setAttOffset] = useStateFR(0);
+function FloorReport({ campaign, agents, leads, shiftLogs, attendanceOverrides, onLogShift }) {
+  // Daily Stats date range
+  const DAILY_PRESETS = [
+    { key: "7d", label: "7d", days: 7 },
+    { key: "30d", label: "30d", days: 30 },
+    { key: "90d", label: "90d", days: 90 },
+    { key: "all", label: "All", days: null },
+  ];
+  const [dailyKey, setDailyKey] = useStateFR("30d");
+  const [dailyOffset, setDailyOffset] = useStateFR(0);
+  const [customRange, setCustomRange] = useStateFR(null);
+  const [pickerOpen, setPickerOpen] = useStateFR(false);
+  const pickerBtnRef = useRefFR(null);
+  const dailyPreset = DAILY_PRESETS.find(p => p.key === dailyKey) || DAILY_PRESETS[1];
+  const presetRange = useMemoFR(() => window.dayRange(dailyPreset.days, dailyOffset), [dailyPreset.days, dailyOffset]);
+  const dailyRange = customRange
+    ? { startISO: customRange.startISO, endISO: customRange.endISO, label: `${U.shortDate(customRange.startISO)} – ${U.shortDate(customRange.endISO)}` }
+    : presetRange;
 
-  // Daily aggregation
+  useEffectFR(() => {
+    if (dailyPreset.days == null && dailyOffset !== 0) setDailyOffset(0);
+  }, [dailyPreset.days]);
+
+  // Daily aggregation — filtered by date range. On Floor is auto-computed from
+  // attendance (count of agents with status="present" for that date).
   const days = useMemoFR(() => {
-    const map = {};
-    const camLeads = leads.filter(l => l.campaign_id === campaign.id);
-    camLeads.forEach(l => {
-      const r = (map[l.date] ||= { date: l.date, total: 0, pending: 0, transfer: 0, confirmed: 0, ia: 0, dnc: 0, bad: 0 });
-      r.total++; r[l.status]++;
-    });
-    shiftLogs.filter(s => s.campaign_id === campaign.id).forEach(s => {
-      const r = (map[s.date] ||= { date: s.date, total: 0, pending: 0, transfer: 0, confirmed: 0, ia: 0, dnc: 0, bad: 0 });
-      r.on_floor = s.agents_on_floor;
-    });
-    const arr = Object.values(map).sort((a, b) => b.date.localeCompare(a.date));
-    return arr;
-  }, [leads, shiftLogs, campaign.id]);
-
-  // Attendance computation
-  // Build N days ending at (today - attOffset)
-  const dateCols = useMemoFR(() => {
-    const out = [];
-    for (let i = 0; i < attDays; i++) {
-      const d = new Date(window.MOCK_TODAY);
-      d.setDate(d.getDate() - i - attOffset);
-      out.push(U.dayStr(d));
-    }
-    return out; // newest first
-  }, [attDays, attOffset]);
-
-  // Cap how far back you can page — don't go earlier than the campaign was created
-  const maxOffset = useMemoFR(() => {
-    if (!campaign.created_at) return 9999;
-    const created = U.parseDate(campaign.created_at);
-    const diffDays = Math.floor((window.MOCK_TODAY - created) / 86400000);
-    return Math.max(0, diffDays - attDays + 1);
-  }, [campaign.created_at, attDays]);
-
-  // Clamp current offset if window size shrunk to less than current offset
-  React.useEffect(() => {
-    if (attOffset > maxOffset) setAttOffset(maxOffset);
-  }, [maxOffset, attOffset]);
-
-  // Range label e.g. "Apr 16 – May 15"
-  const rangeLabel = useMemoFR(() => {
-    if (!dateCols.length) return "";
-    const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    const last = U.parseDate(dateCols[0]);              // newest
-    const first = U.parseDate(dateCols[dateCols.length - 1]); // oldest
-    const sameMonth = first.getMonth() === last.getMonth() && first.getFullYear() === last.getFullYear();
-    if (sameMonth) {
-      return `${MONTHS[first.getMonth()]} ${first.getDate()}–${last.getDate()}, ${last.getFullYear()}`;
-    }
-    return `${MONTHS[first.getMonth()]} ${first.getDate()} – ${MONTHS[last.getMonth()]} ${last.getDate()}, ${last.getFullYear()}`;
-  }, [dateCols]);
-
-  const campaignAgents = useMemoFR(() => agents.filter(a => a.campaign_id === campaign.id && a.status === "active"), [agents, campaign.id]);
-
-  // For each agent/date — auto: present if any leads, else absent (Sat/Sun → off; before agent's hire date → off too)
-  const attMap = useMemoFR(() => {
-    const m = {};
-    // leads per agent/date
+    const inRange = (d) => (dailyPreset.days == null && !customRange) || (d >= dailyRange.startISO && d <= dailyRange.endISO);
+    const camAgents = agents.filter(a => a.campaign_id === campaign.id && a.status === "active");
     const leadDays = {};
     leads.forEach(l => {
       if (l.campaign_id !== campaign.id) return;
       leadDays[l.agent_id + "|" + l.date] = true;
     });
-    campaignAgents.forEach(a => {
-      dateCols.forEach(d => {
-        const key = a.id + "|" + d;
-        const override = attendanceOverrides[key];
-        if (override) {
-          m[key] = { status: override, auto: false };
-        } else {
-          const dow = U.parseDate(d).getDay();
-          // Before agent's hire date → treat as off (not absent — they hadn't started yet)
-          if (a.date_added && d < a.date_added) m[key] = { status: "off", auto: true, preHire: true };
-          else if (leadDays[key]) m[key] = { status: "present", auto: true };
-          else if (dow === 0 || dow === 6) m[key] = { status: "off", auto: true };
-          else m[key] = { status: "absent", auto: true };
-        }
-      });
+    const statusFor = (agent, date) => {
+      const key = agent.id + "|" + date;
+      const ov = attendanceOverrides && attendanceOverrides[key];
+      if (ov) return ov;
+      if (agent.date_added && date < agent.date_added) return "off";
+      if (leadDays[key]) return "present";
+      const dow = U.parseDate(date).getDay();
+      if (dow === 0 || dow === 6) return "off";
+      return "absent";
+    };
+    const presentCountForDate = (date) => {
+      let n = 0;
+      camAgents.forEach(a => { if (statusFor(a, date) === "present") n++; });
+      return n;
+    };
+
+    const map = {};
+    leads.filter(l => l.campaign_id === campaign.id).forEach(l => {
+      if (!inRange(l.date)) return;
+      const r = (map[l.date] ||= { date: l.date, total: 0, pending: 0, transfer: 0, confirmed: 0, ia: 0, dnc: 0, bad: 0 });
+      r.total++; r[l.status]++;
     });
-    return m;
-  }, [campaignAgents, dateCols, leads, campaign.id, attendanceOverrides]);
-
-  const attSummary = useMemoFR(() => {
-    return campaignAgents.map(a => {
-      let p = 0, ab = 0, off = 0, leadsCount = 0;
-      dateCols.forEach(d => {
-        const s = attMap[a.id + "|" + d]?.status;
-        if (s === "present") p++;
-        else if (s === "absent") ab++;
-        else off++;
-      });
-      leads.forEach(l => {
-        if (l.campaign_id === campaign.id && l.agent_id === a.id && dateCols.includes(l.date)) leadsCount++;
-      });
-      const pct = (p + ab) > 0 ? p / (p + ab) : 0;
-      const avg = p > 0 ? leadsCount / p : 0;
-      return { ...a, present: p, absent: ab, off, pct, avg, leadsCount };
-    }).sort((a, b) => a.full_name.localeCompare(b.full_name));
-  }, [campaignAgents, dateCols, attMap, leads, campaign.id]);
-
-  const cycleAttendance = (agentId, date) => {
-    const cur = attMap[agentId + "|" + date]?.status || "absent";
-    const next = cur === "present" ? "absent" : cur === "absent" ? "off" : "present";
-    onSetAttendance(agentId, date, next);
-  };
-
-  const logShift = () => {
-    const n = parseInt(newShiftCount, 10);
-    if (!newShiftDate || !(n >= 0)) return;
-    onLogShift(newShiftDate, n);
-    setNewShiftCount("");
-  };
+    // Also surface days with attendance overrides but no leads
+    Object.keys(attendanceOverrides || {}).forEach(k => {
+      const [, date] = k.split("|");
+      if (!date || !inRange(date)) return;
+      if (!map[date]) map[date] = { date, total: 0, pending: 0, transfer: 0, confirmed: 0, ia: 0, dnc: 0, bad: 0 };
+    });
+    Object.values(map).forEach(r => { r.on_floor = presentCountForDate(r.date); });
+    return Object.values(map).sort((a, b) => b.date.localeCompare(a.date));
+  }, [leads, agents, attendanceOverrides, campaign.id, dailyRange, dailyPreset.days, customRange]);
 
   return (
     <div className="tab-content">
-      {/* Section A: Daily Stats */}
-      <div className="section-head">
-        <h2>Daily Floor Stats</h2>
-        <span className="sub">Lead flow vs agents on floor, last {days.length} days with activity</span>
+      {/* Weekly rollup + lifetime totals — defaults to All here */}
+      <WeeklyStats campaign={campaign} leads={leads} shiftLogs={shiftLogs} agents={agents} attendanceOverrides={attendanceOverrides} defaultPresetKey="all" />
+      <div style={{ height: 22 }}/>
+
+      {/* Daily Stats */}
+      <div className="section-head" style={{ alignItems: "flex-end" }}>
+        <div>
+          <h2>Daily Floor Stats</h2>
+          <span className="sub">Lead flow vs agents on floor · {days.length} day{days.length === 1 ? "" : "s"} with activity in range</span>
+        </div>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {customRange ? (
+            <>
+              <button
+                ref={pickerBtnRef}
+                className="chip active"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                onClick={() => setPickerOpen(o => !o)}
+                title="Click to change dates"
+              >
+                <Icon name="calendar" size={11}/>
+                {U.shortDate(customRange.startISO)} – {U.shortDate(customRange.endISO)}
+              </button>
+              <button className="icon-btn" title="Clear custom range" onClick={() => setCustomRange(null)}>
+                <Icon name="x" size={12}/>
+              </button>
+            </>
+          ) : (
+            <>
+              <RangeNav
+                options={DAILY_PRESETS}
+                value={dailyKey}
+                onChange={(k) => { setDailyKey(k); setDailyOffset(0); }}
+                rangeLabel={dailyRange.label}
+                canBack={dailyPreset.days != null}
+                canForward={dailyPreset.days != null && dailyOffset > 0}
+                onBack={() => setDailyOffset(o => o + 1)}
+                onForward={() => setDailyOffset(o => Math.max(0, o - 1))}
+                onReset={() => setDailyOffset(0)}
+                canReset={dailyOffset !== 0}
+              />
+              <button
+                ref={pickerBtnRef}
+                className="chip"
+                style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+                onClick={() => setPickerOpen(o => !o)}
+              >
+                <Icon name="calendar" size={11}/>
+                Pick dates…
+              </button>
+            </>
+          )}
+          <DateRangePicker
+            open={pickerOpen}
+            onClose={() => setPickerOpen(false)}
+            anchorRef={pickerBtnRef}
+            value={customRange || (dailyPreset.days != null ? presetRange : null)}
+            onChange={(r) => { setCustomRange(r); setDailyOffset(0); }}
+          />
+        </div>
       </div>
 
-      {/* Shift logger */}
-      <div className="card" style={{ padding: 12, marginBottom: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <strong style={{ fontSize: 12.5 }}>Log shift:</strong>
-        <div style={{ width: 170 }}>
-          <DatePicker value={newShiftDate} onChange={(v) => setNewShiftDate(v)}/>
-        </div>
-        <span className="muted" style={{ fontSize: 12 }}>agents on floor</span>
-        <input className="input" type="number" min="0" style={{ width: 80 }}
-          placeholder="0" value={newShiftCount}
-          onChange={(e) => setNewShiftCount(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && logShift()}/>
-        <button className="btn btn-primary btn-sm" onClick={logShift}>Log</button>
-        <div className="help" style={{ marginLeft: "auto" }}>
-          Logging a date again will overwrite the previous count.
-        </div>
+      {/* Shift logger removed — On Floor is now auto-derived from the Attendance tab */}
+      <div className="help" style={{ marginBottom: 12, fontSize: 11 }}>
+        <Icon name="check" size={11} style={{ verticalAlign: "-1px", color: "var(--money-pos)", marginRight: 4 }}/>
+        <span>On Floor counts each day's <strong style={{ color: "var(--text-2)" }}>present</strong> agents — take attendance in the <strong style={{ color: "var(--text)" }}>Attendance</strong> tab and this report updates automatically.</span>
       </div>
 
       <div className="table-wrap">
@@ -170,9 +158,7 @@ function FloorReport({ campaign, agents, leads, shiftLogs, attendanceOverrides, 
               const dow = U.parseDate(d.date).getDay();
               const isWeekend = dow === 0 || dow === 6;
               let ratioCls = "";
-              if (ratio != null) {
-                if (ratio >= 2.0) ratioCls = "row-good";
-              }
+              if (ratio != null && ratio >= 2.0) ratioCls = "row-good";
               return (
                 <tr key={d.date} className={ratioCls}>
                   <td className="num-l">{U.shortDate(d.date)}</td>
@@ -200,140 +186,6 @@ function FloorReport({ campaign, agents, leads, shiftLogs, attendanceOverrides, 
             })}
           </tbody>
         </table>
-      </div>
-
-      {/* Section B: Attendance */}
-      <div className="section-head" style={{ paddingTop: 28, alignItems: "flex-end" }}>
-        <div>
-          <h2>Agent Attendance</h2>
-          <span className="sub">Click a cell to toggle present → absent → off. Lime ring = auto-detected from lead activity.</span>
-        </div>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <div className="row" style={{ gap: 4 }}>
-            <button
-              className="icon-btn"
-              title={attOffset >= maxOffset ? `Reached campaign start (${U.shortDate(campaign.created_at)})` : "Earlier"}
-              onClick={() => setAttOffset(o => Math.min(maxOffset, o + attDays))}
-              disabled={attOffset >= maxOffset}
-              style={attOffset >= maxOffset ? { opacity: 0.35, cursor: "not-allowed" } : {}}
-            >
-              <Icon name="arrowLeft" size={13}/>
-            </button>
-            <div style={{
-              minWidth: 168,
-              textAlign: "center",
-              fontSize: 12.5,
-              padding: "0 10px",
-              color: "var(--text)",
-              fontFamily: "Geist Mono, monospace",
-              fontVariantNumeric: "tabular-nums",
-              letterSpacing: "-0.01em"
-            }}>{rangeLabel}</div>
-            <button className="icon-btn" title="Later" onClick={() => setAttOffset(o => Math.max(0, o - attDays))} disabled={attOffset === 0} style={attOffset === 0 ? { opacity: 0.4, cursor: "not-allowed" } : {}}>
-              <Icon name="chevronRight" size={13}/>
-            </button>
-          </div>
-          {/* Today is always rendered (just disabled) so the arrows don't shift when paging back */}
-          <button
-            className="btn btn-sm"
-            onClick={() => setAttOffset(0)}
-            disabled={attOffset === 0}
-            style={attOffset === 0 ? { opacity: 0.35, cursor: "default" } : {}}
-          >Today</button>
-          <div className="filter-chips">
-            {[7, 14, 30].map(d => (
-              <button key={d} className={"chip" + (attDays === d ? " active" : "")} onClick={() => setAttDays(d)}>
-                {d}d
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="att-grid">
-        <div className="att-scroll">
-          <table className="att-table">
-            <thead>
-              <tr>
-                <th>Agent</th>
-                {/* Reverse so dates go oldest → newest left to right, like a calendar */}
-                {[...dateCols].reverse().map((d, i, arr) => {
-                  const dt = U.parseDate(d);
-                  const prev = i > 0 ? U.parseDate(arr[i - 1]) : null;
-                  const newMonth = !prev || prev.getMonth() !== dt.getMonth();
-                  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-                  return (
-                    <th key={d} style={newMonth && i > 0 ? { borderLeft: "2px solid var(--border)" } : {}}>
-                      {newMonth && (
-                        <div style={{ fontSize: 9, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 1, fontWeight: 600 }}>
-                          {MONTHS[dt.getMonth()]}
-                        </div>
-                      )}
-                      <div style={{ color: "var(--text)" }}>{dt.getDate()}</div>
-                      <div style={{ fontSize: 9, color: "var(--text-4)", marginTop: 1 }}>{U.dayOfWeek(d).charAt(0)}</div>
-                    </th>
-                  );
-                })}
-                <th style={{ position: "sticky", right: 0, minWidth: 90, borderLeft: "1px solid var(--border)" }}>
-                  Att %
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {attSummary.map(a => {
-                let pctCls = "";
-                if (a.pct < 0.6) pctCls = "att-warn-red";
-                else if (a.pct < 0.8) pctCls = "att-warn-amber";
-                return (
-                  <tr key={a.id}>
-                    <td>
-                      <span>{a.full_name}</span>
-                      {a.is_tl && <TLBadge small/>}
-                    </td>
-                    {[...dateCols].reverse().map((d, i, arr) => {
-                      const cell = attMap[a.id + "|" + d];
-                      const s = cell?.status;
-                      const cls = "att-cell att-" + s + (cell?.auto ? " att-auto" : "");
-                      const glyph = s === "present" ? "✓" : s === "absent" ? "✗" : "—";
-                      const prev = i > 0 ? U.parseDate(arr[i - 1]) : null;
-                      const dt = U.parseDate(d);
-                      const newMonth = prev && prev.getMonth() !== dt.getMonth();
-                      return (
-                        <td key={d} style={newMonth ? { borderLeft: "2px solid var(--border)" } : {}}>
-                          <span className={cls} onClick={() => cycleAttendance(a.id, d)}>{glyph}</span>
-                        </td>
-                      );
-                    })}
-                    <td style={{ position: "sticky", right: 0, borderLeft: "1px solid var(--border)" }} className="num-l">
-                      <span className={"money money-bold " + pctCls}>{Math.round(a.pct * 100)}%</span>
-                      <div style={{ fontSize: 10, color: "var(--text-4)" }}>{a.present}/{a.present + a.absent}</div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Mini legend */}
-      <div className="row" style={{ marginTop: 10, gap: 16, fontSize: 11.5, color: "var(--text-3)", flexWrap: "wrap" }}>
-        <span className="row" style={{ gap: 6 }}>
-          <span className="att-cell att-present" style={{ width: 16, height: 16 }}>✓</span>
-          <span><strong style={{ color: "var(--text)" }}>Present</strong> — worked that day</span>
-        </span>
-        <span className="row" style={{ gap: 6 }}>
-          <span className="att-cell att-absent" style={{ width: 16, height: 16 }}>✗</span>
-          <span><strong style={{ color: "var(--text)" }}>Absent</strong> — expected but didn't show</span>
-        </span>
-        <span className="row" style={{ gap: 6 }}>
-          <span className="att-cell att-off" style={{ width: 16, height: 16 }}>—</span>
-          <span><strong style={{ color: "var(--text)" }}>Off</strong> — scheduled day off (weekend, vacation)</span>
-        </span>
-        <span className="row" style={{ gap: 6 }}>
-          <span className="att-cell att-present att-auto" style={{ width: 16, height: 16 }}>✓</span>
-          <span>Auto-detected from lead activity — click any cell to override</span>
-        </span>
       </div>
     </div>
   );

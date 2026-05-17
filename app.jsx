@@ -203,6 +203,7 @@ function CampaignShell(props) {
   const { campaign, tab, onTab } = props;
   const tabs = [
     ["overview", "Overview", "activity"],
+    ["attendance", "Attendance", "check"],
     ["lead_log", "Lead Log", "list"],
     ["commission", "Commission Sheet", "download"],
     ["agent_report", "Agent Report", "users"],
@@ -225,6 +226,7 @@ function CampaignShell(props) {
           agents={props.agents}
           leads={props.leads}
           shiftLogs={props.shiftLogs}
+          attendanceOverrides={props.attendanceOverrides}
           onJumpTab={onTab}
         />
       )}
@@ -263,6 +265,14 @@ function CampaignShell(props) {
           shiftLogs={props.shiftLogs}
           attendanceOverrides={props.attendanceOverrides}
           onLogShift={props.onLogShift}
+        />
+      )}
+      {tab === "attendance" && (
+        <Attendance
+          campaign={campaign}
+          agents={props.agents}
+          leads={props.leads}
+          attendanceOverrides={props.attendanceOverrides}
           onSetAttendance={props.onSetAttendance}
         />
       )}
