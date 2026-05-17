@@ -40,7 +40,7 @@ function EditableAgentName({ agent, onUpdateAgent }) {
   );
 }
 
-function Settings({ campaign, agents, profile, onUpdateCampaign, onAddAgent, onUpdateAgent, onDeleteCampaign, leadsCount }) {
+function Settings({ campaign, agents, profile, onUpdateCampaign, onAddAgent, onUpdateAgent, onExport, onDeleteCampaign, leadsCount }) {
   const [form, setForm] = useStateST({ ...campaign });
   const [savedFlash, setSavedFlash] = useStateST(false);
   const dirty = Object.keys(form).some(k => form[k] !== campaign[k]);
@@ -253,7 +253,7 @@ function Settings({ campaign, agents, profile, onUpdateCampaign, onAddAgent, onU
         </div>
         <div className="card" style={{ padding: 16 }}>
           <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <button className="btn">
+            <button className="btn" onClick={onExport}>
               <Icon name="download" size={12}/> Export all data (JSON)
             </button>
             <button className="btn">

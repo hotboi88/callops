@@ -275,6 +275,24 @@ function CampaignShell(props) {
           onUpdateCampaign={props.onUpdateCampaign}
           onAddAgent={(name, isTl) => props.onAddAgent(campaign.id, name, isTl)}
           onUpdateAgent={props.onUpdateAgent}
+          onExport={() => {
+            const data = {
+              exported_at: new Date().toISOString(),
+              campaign,
+              agents: props.agents.filter(a => a.campaign_id === campaign.id),
+              leads: props.leads.filter(l => l.campaign_id === campaign.id),
+              shift_logs: (props.shiftLogs || []).filter(s => s.campaign_id === campaign.id),
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "callops-" + String(campaign.name || "campaign").replace(/\s+/g, "-").toLowerCase() + "-" + U.dayStr(new Date()) + ".json";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+          }}
           onDeleteCampaign={props.onDeleteCampaign}
           leadsCount={props.leads.filter(l => l.campaign_id === campaign.id).length}
         />
