@@ -60,7 +60,9 @@ function Settings({ campaign, agents, profile, onUpdateCampaign, onAddAgent, onU
     setTimeout(() => setSavedFlash(false), 1400);
   };
 
-  const activeAgents = agents.filter(a => a.campaign_id === campaign.id && a.status !== "removed");
+  const activeAgents = agents
+    .filter(a => a.campaign_id === campaign.id && a.status !== "removed")
+    .sort((a, b) => (a.status === "active" ? 0 : 1) - (b.status === "active" ? 0 : 1));
   const removed = agents.filter(a => a.campaign_id === campaign.id && a.status === "removed");
 
   return (

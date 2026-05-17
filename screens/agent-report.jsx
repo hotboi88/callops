@@ -16,8 +16,11 @@ function AgentReport({ campaign, agents, leads, onAddAgent }) {
       .filter(a => a.campaign_id === campaign.id && a.status === "active")
       .map(a => {
         const r = map[a.id] || { total: 0, pending: 0, transfer: 0, confirmed: 0, ia: 0, dnc: 0, bad: 0 };
-        const conv = r.total > 0 ? (r.ia + r.confirmed) / r.total : 0;
-        return { ...a, ...r, conv };
+        // "Transferred" = every lead that left pending (transfer/ia/confirmed/dnc/bad).
+        // Conversion is measured against what was transferred, not total leads.
+        const transferred = r.total - r.pending;
+        const conv = transferred > 0 ? (r.ia + r.confirmed) / transferred : 0;
+        return { ...a, ...r, transferred, conv };
       });
     list.sort((a, b) => (b.ia + b.confirmed) - (a.ia + a.confirmed));
     return list;
@@ -48,7 +51,7 @@ function AgentReport({ campaign, agents, leads, onAddAgent }) {
         <div>
           <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Agent Performance</h2>
           <div className="help" style={{ marginTop: 2 }}>
-            Sorted by IAs + Confirms. Agents with 5+ transfers and 0 conversions flagged.
+            Sorted by IAs + Confirms. Agents with 5+ transferred and 0 conversions flagged.
           </div>
         </div>
         <div style={{ marginLeft: "auto" }}>
@@ -65,17 +68,17 @@ function AgentReport({ campaign, agents, leads, onAddAgent }) {
               <th>Agent</th>
               <th className="num" style={{ width: 80 }}>Total Leads</th>
               <th className="num" style={{ width: 80 }}>Pending</th>
-              <th className="num" style={{ width: 80 }}>Transfers</th>
+              <th className="num" style={{ width: 95 }}>Transferred</th>
               <th className="num" style={{ width: 70 }}>IAs</th>
               <th className="num" style={{ width: 80 }}>Confirms</th>
-              <th className="num" style={{ width: 90 }}>Total Conf.</th>
+              <th className="num" style={{ width: 90 }}>Converted</th>
               <th className="num" style={{ width: 70 }}>DNC</th>
               <th className="num" style={{ width: 80 }}>Conv%</th>
             </tr>
           </thead>
           <tbody>
             {rows.map(a => {
-              const warn = a.transfer >= 5 && (a.ia + a.confirmed) === 0;
+              const warn = a.transferred >= 5 && (a.ia + a.confirmed) === 0;
               return (
                 <tr key={a.id} className={warn ? "row-warn" : ""}>
                   <td>
@@ -89,14 +92,14 @@ function AgentReport({ campaign, agents, leads, onAddAgent }) {
                   </td>
                   <td className="num"><span className="money money-bold">{a.total || "—"}</span></td>
                   <td className="num"><span className={a.pending ? "money" : "money money-muted"}>{a.pending || "—"}</span></td>
-                  <td className="num"><span className={a.transfer ? "money" : "money money-muted"} style={a.transfer ? { color: "var(--status-transfer-fg)" } : {}}>{a.transfer || "—"}</span></td>
+                  <td className="num"><span className={a.transferred ? "money" : "money money-muted"} style={a.transferred ? { color: "var(--status-transfer-fg)" } : {}}>{a.transferred || "—"}</span></td>
                   <td className="num"><span className={a.ia ? "money money-tl" : "money money-muted"}>{a.ia || "—"}</span></td>
                   <td className="num"><span className={a.confirmed ? "money money-pos" : "money money-muted"}>{a.confirmed || "—"}</span></td>
                   <td className="num"><span className={(a.ia + a.confirmed) > 0 ? "money money-bold" : "money money-muted"}>{(a.ia + a.confirmed) || "—"}</span></td>
                   <td className="num"><span className={a.dnc > 0 ? "money" : "money money-muted"} style={a.dnc > 0 ? { color: "var(--status-dnc-fg)" } : {}}>{a.dnc || "—"}</span></td>
                   <td className="num">
                     <span className="money" style={{ color: a.conv >= 0.5 ? "var(--money-pos)" : a.conv > 0 ? "var(--text)" : "var(--text-4)" }}>
-                      {a.transfer === 0 ? "—" : (a.conv === Infinity ? "∞" : Math.round(a.conv * 100) + "%")}
+                      {a.transferred === 0 ? "—" : Math.round(a.conv * 100) + "%"}
                     </span>
                   </td>
                 </tr>
