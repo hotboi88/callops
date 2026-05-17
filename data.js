@@ -97,7 +97,6 @@
     ["talia500226", false, null, "active"],
     ["Halaena Faith", false, null, "active"],
     ["wengflakes", false, null, "active"],
-    ["Myles C", false, null, "active"],
     ["markblanco2023", false, null, "active"],
     ["Charvz", false, null, "active"],
     ["rjulito1102", false, null, "active"],
@@ -144,7 +143,7 @@
     "John Ryan Pagunsan": "2026-04-06", "Andrea": "2026-04-10", "Faye Raner": "2026-04-10",
     "Guen Guerrero": "2026-04-10", "leadstrat eevecera": "2026-04-20", "Arlen": "2026-04-20",
     "talia500226": "2026-04-21", "Halaena Faith": "2026-04-21", "wengflakes": "2026-04-21",
-    "Myles C": "2026-04-24", "markblanco2023": "2026-04-27", "Charvz": "2026-04-27",
+    "markblanco2023": "2026-04-27", "Charvz": "2026-04-27",
     "rjulito1102": "2026-04-27", "norhana liwalug": "2026-04-27", "Je Lay": "2026-05-08",
     "Nikky Boy": "2026-05-08", "Fairy Rose P Salaya": "2026-05-08", "Tyrrie": "2026-05-11",
     "Roxanne Campana": "2026-05-11", "John marc Tumlos": "2026-05-11", "Ariz": "2026-05-11",
@@ -169,7 +168,7 @@
     "John Ryan Pagunsan": "2026-04-07", "Andrea": "2026-04-16", "Faye Raner": "2026-04-16",
     "Guen Guerrero": "2026-04-17", "leadstrat eevecera": "2026-04-23", "Arlen": "2026-04-29",
     "talia500226": "2026-04-23", "Halaena Faith": "2026-04-23", "wengflakes": "2026-04-23",
-    "Myles C": "2026-05-01", "markblanco2023": "2026-04-29", "Charvz": "2026-04-27",
+    "markblanco2023": "2026-04-29", "Charvz": "2026-04-27",
     "rjulito1102": "2026-04-29", "norhana liwalug": "2026-04-29", "Nikky Boy": "2026-05-11",
     "Fairy Rose P Salaya": "2026-05-16", "Tyrrie": "2026-05-11", "Roxanne Campana": "2026-05-16",
     "John marc Tumlos": "2026-05-14", "Ariz": "2026-05-15", "Jhona Lim": "2026-05-11",
@@ -745,7 +744,7 @@
     profile, users, audit_log, today: dayStr(TODAY),
     // Bump this whenever the seed (agents/leads/etc.) changes — the app
     // discards a saved blob from an older seed and re-seeds from here.
-    seedVersion: 2,
+    seedVersion: 3,
   };
   window.MOCK_TODAY = TODAY;
 })();
