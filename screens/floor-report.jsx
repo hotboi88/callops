@@ -147,7 +147,7 @@ function FloorReport({ campaign, agents, leads, shiftLogs, attendanceOverrides, 
               <th className="num" style={{ width: 90 }}>On Floor</th>
               <th className="num" style={{ width: 90 }}>Total Leads</th>
               <th className="num" style={{ width: 80 }}>Pending</th>
-              <th className="num" style={{ width: 90 }}>Transfers</th>
+              <th className="num" style={{ width: 95 }}>Transferred</th>
               <th className="num" style={{ width: 70 }}>IAs</th>
               <th className="num" style={{ width: 80 }}>Confirms</th>
               <th className="num" style={{ width: 70 }}>DNC</th>
@@ -159,6 +159,8 @@ function FloorReport({ campaign, agents, leads, shiftLogs, attendanceOverrides, 
               const ratio = d.on_floor && d.on_floor > 0 ? d.total / d.on_floor : null;
               const dow = U.parseDate(d.date).getDay();
               const isWeekend = dow === 0 || dow === 6;
+              // Transferred = every non-pending lead (transfer + ia + confirmed + dnc + bad).
+              const transferred = d.total - d.pending;
               let ratioCls = "";
               if (ratio != null && ratio >= 2.0) ratioCls = "row-good";
               return (
@@ -174,7 +176,7 @@ function FloorReport({ campaign, agents, leads, shiftLogs, attendanceOverrides, 
                   </td>
                   <td className="num"><span className="money money-bold">{d.total || "—"}</span></td>
                   <td className="num"><span className={d.pending ? "money" : "money money-muted"}>{d.pending || "—"}</span></td>
-                  <td className="num"><span className={d.transfer ? "money" : "money money-muted"} style={d.transfer ? { color: "var(--status-transfer-fg)" } : {}}>{d.transfer || "—"}</span></td>
+                  <td className="num"><span className={transferred ? "money" : "money money-muted"} style={transferred ? { color: "var(--status-transfer-fg)" } : {}}>{transferred || "—"}</span></td>
                   <td className="num"><span className={d.ia ? "money money-tl" : "money money-muted"}>{d.ia || "—"}</span></td>
                   <td className="num"><span className={d.confirmed ? "money money-pos" : "money money-muted"}>{d.confirmed || "—"}</span></td>
                   <td className="num"><span className={d.dnc ? "money" : "money money-muted"} style={d.dnc ? { color: "var(--status-dnc-fg)" } : {}}>{d.dnc || "—"}</span></td>
