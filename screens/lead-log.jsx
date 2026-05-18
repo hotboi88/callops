@@ -67,8 +67,10 @@ function LeadLog({ campaign, agents, leads, onAddLead, onUpdateLead, onDeleteLea
           av = (a.client_commission || 0) + (a.spiff || 0) + (a.tl_bonus || 0);
           bv = (b.client_commission || 0) + (b.spiff || 0) + (b.tl_bonus || 0); break;
         default:
-          av = a.date + String(a.seq).padStart(6, "0");
-          bv = b.date + String(b.seq).padStart(6, "0");
+          // Primary: date. Secondary: log time (hidden) so same-date leads
+          // appear in the order they were logged.
+          av = a.date + "|" + String(U.leadTimeKey(a)).padStart(16, "0");
+          bv = b.date + "|" + String(U.leadTimeKey(b)).padStart(16, "0");
       }
       if (av < bv) return sort.dir === "asc" ? -1 : 1;
       if (av > bv) return sort.dir === "asc" ? 1 : -1;

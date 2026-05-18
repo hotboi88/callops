@@ -593,6 +593,7 @@ function App({ authedProfile }) {
       campaign_id: activeCampaign.id,
       agent_id: lead.agent_id,
       seq: 9999999,
+      created_at: new Date().toISOString(),
       date: lead.date,
       customer_name: lead.customer_name,
       phone: lead.phone,

@@ -182,6 +182,29 @@
     return String(s).trim();
   };
 
+  // Effective log time of a lead, as epoch ms — used as a hidden secondary
+  // sort key so leads within the same date appear in the order they were
+  // logged. Never displayed.
+  U.leadTimeKey = function (lead) {
+    if (!lead) return 0;
+    // Explicit creation timestamp, if present.
+    if (lead.created_at) {
+      const t = Date.parse(lead.created_at);
+      if (!isNaN(t)) return t;
+    }
+    // App-added leads carry their log time in the id: "ld_<epoch-ms>".
+    const m = /^ld_(\d+)$/.exec(lead.id || "");
+    if (m) return Number(m[1]);
+    // Seed/historical leads: derive from date + HH:MM time field.
+    if (lead.date && lead.time && /^\d{1,2}:\d{2}/.test(lead.time)) {
+      const t = Date.parse(lead.date + "T" + lead.time);
+      if (!isNaN(t)) return t;
+    }
+    // Fallback: midnight of the date, nudged by seq for stable order.
+    const d = U.parseDate(lead.date);
+    return (d ? d.getTime() : 0) + (Number(lead.seq) || 0);
+  };
+
   U.absTime = function (iso) {
     if (!iso) return "—";
     const d = new Date(iso);
