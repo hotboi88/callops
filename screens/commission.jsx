@@ -15,6 +15,11 @@ function CommissionSheet({ campaign, agents, leads, profile, onInviteUser }) {
       const lw = new Date(today);
       lw.setDate(lw.getDate() - 7);
       return { start: U.dayStr(U.startOfWeek(lw)), end: U.dayStr(U.endOfWeek(lw)), label: "Last Week" };
+    } else if (period === "two_weeks") {
+      // Bi-weekly pay period: start of last week → end of this week (14 days).
+      const lw = new Date(today);
+      lw.setDate(lw.getDate() - 7);
+      return { start: U.dayStr(U.startOfWeek(lw)), end: U.dayStr(U.endOfWeek(today)), label: "Past 2 Weeks" };
     } else if (period === "month") {
       const s = new Date(today); s.setDate(1);
       return { start: U.dayStr(s), end: U.dayStr(today), label: "Month-to-date" };
@@ -106,6 +111,7 @@ function CommissionSheet({ campaign, agents, leads, profile, onInviteUser }) {
           {[
             ["this_week","This Week"],
             ["last_week","Last Week"],
+            ["two_weeks","2 Weeks"],
             ["month","MTD"],
             ["all","All Time"],
             ["custom","Custom…"],
