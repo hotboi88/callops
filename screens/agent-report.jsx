@@ -165,11 +165,12 @@ function AgentReport({ campaign, agents, leads, onAddAgent }) {
         </table>
       </div>
 
-      {/* Weekly grid — owns its own time range */}
+      {/* Weekly grid — owns its own time range; agent order mirrors the table above */}
       <WeeklyGrid
         campaign={campaign}
         leads={leads}
         agents={agents}
+        order={rows.map(r => r.id)}
       />
 
       {showAdd && (
@@ -184,7 +185,7 @@ function AgentReport({ campaign, agents, leads, onAddAgent }) {
 
 // Weekly grid — self-contained: owns its own time range, calendar picker,
 // presets, and pagination through the resulting weeks.
-function WeeklyGrid({ campaign, leads, agents }) {
+function WeeklyGrid({ campaign, leads, agents, order }) {
   const WG_PRESETS = [
     { key: "30d", label: "30d", days: 30 },
     { key: "90d", label: "90d", days: 90 },
@@ -228,12 +229,18 @@ function WeeklyGrid({ campaign, leads, agents }) {
       if (l.status === "ia" || l.status === "confirmed") conv[l.agent_id] = (conv[l.agent_id] || 0) + 1;
     });
     const weeksOut = Array.from(weekSet).sort();
-    // Same ordering as the Agent Performance table: by IAs + Confirms, descending.
+    // Mirror the Agent Performance table's exact order (conversion supremacy).
+    // Falls back to in-grid IAs+Confirms if no order was supplied.
+    const orderIdx = {};
+    (order || []).forEach((id, i) => { orderIdx[id] = i; });
     const gridAgents = agents
       .filter(a => a.campaign_id === campaign.id && a.status === "active" && seenAgents.has(a.id))
-      .sort((a, b) => (conv[b.id] || 0) - (conv[a.id] || 0));
+      .sort((a, b) => {
+        if (order && order.length) return (orderIdx[a.id] ?? 9999) - (orderIdx[b.id] ?? 9999);
+        return (conv[b.id] || 0) - (conv[a.id] || 0);
+      });
     return { weeks: weeksOut, grid: g, gridAgents };
-  }, [leads, agents, campaign.id, wgRange, wgPreset.days, wgCustom]);
+  }, [leads, agents, campaign.id, wgRange, wgPreset.days, wgCustom, order]);
 
   const WINDOW = 8;
   const [offset, setOffset] = useStateAR(0);
