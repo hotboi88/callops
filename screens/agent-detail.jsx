@@ -30,6 +30,7 @@ function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBa
   const pickerBtnRef = useRefAD(null);
   const chartRef = useRefAD(null);
   const [chartW, setChartW] = useStateAD(640);
+  const [hover, setHover] = useStateAD(null);
   const preset = AD_PRESETS.find(p => p.key === dayKey) || AD_PRESETS[1];
   const presetRange = useMemoAD(() => window.dayRange(preset.days, dayOffset), [preset.days, dayOffset]);
   const range = customRange
@@ -172,7 +173,7 @@ function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBa
     return { transferred, conv: transferred > 0 ? (ia + confirmed) / transferred : 0 };
   }, [leads, campaign.id, agent.id, range, preset.days, customRange]);
 
-  // Daily trend — continuous calendar days, clamped to tenure, last 90 shown.
+  // Weekly trend — continuous Mon-start weeks, clamped to tenure, last 14 shown.
   const trend = useMemoAD(() => {
     let startISO = range.startISO;
     if (agent.date_added && agent.date_added > startISO) startISO = agent.date_added;
@@ -184,26 +185,24 @@ function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBa
     if (endISO > todayISO) endISO = todayISO;
     if (agent.date_removed && agent.date_removed < endISO) endISO = agent.date_removed;
     const endD = U.parseDate(endISO);
-    const days = [];
-    const byDate = {};
-    let cur = U.parseDate(startISO);
+    const weeks = [];
+    let cur = U.startOfWeek(U.parseDate(startISO));
     let guard = 0;
-    while (cur <= endD && guard < 800) {
-      const ds = U.dayStr(cur);
-      const rec = { date: ds, transferred: 0, ia: 0, confirmed: 0 };
-      days.push(rec);
-      byDate[ds] = rec;
-      cur = new Date(cur); cur.setDate(cur.getDate() + 1);
+    while (cur <= endD && guard < 260) {
+      const wkStart = U.dayStr(cur);
+      const wkEndD = new Date(cur); wkEndD.setDate(wkEndD.getDate() + 6);
+      weeks.push({ label: U.weekLabel(wkStart), start: wkStart, end: U.dayStr(wkEndD), transferred: 0, ia: 0, confirmed: 0 });
+      cur = new Date(cur); cur.setDate(cur.getDate() + 7);
       guard++;
     }
     agentLeads.forEach(l => {
-      const d = byDate[l.date];
-      if (!d) return;
-      if (l.status !== "pending") d.transferred++;
-      if (l.status === "ia") d.ia++;
-      if (l.status === "confirmed") d.confirmed++;
+      const w = weeks.find(x => l.date >= x.start && l.date <= x.end);
+      if (!w) return;
+      if (l.status !== "pending") w.transferred++;
+      if (l.status === "ia") w.ia++;
+      if (l.status === "confirmed") w.confirmed++;
     });
-    return days.slice(-90);
+    return weeks.slice(-14);
   }, [agentLeads, range, agent, todayISO]);
 
   const flags = useMemoAD(() => {
@@ -236,6 +235,21 @@ function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBa
   const daysOnFloor = attendance.present;
   const leadsPerDay = daysOnFloor > 0 ? me.total / daysOnFloor : null;
   const convPerDay = daysOnFloor > 0 ? me.converted / daysOnFloor : null;
+
+  // Trend line geometry — shared by the chart render and the hover handler.
+  const chart = (() => {
+    const n = trend.length;
+    if (!n) return null;
+    const padL = 14, padR = 14, padT = 18, padB = 26;
+    const H = 184;
+    const W = Math.max(160, chartW);
+    const innerW = W - padL - padR;
+    const innerH = H - padT - padB;
+    const maxV = Math.max(1, ...trend.map(t => t.transferred));
+    const X = (i) => n <= 1 ? padL + innerW / 2 : padL + (i / (n - 1)) * innerW;
+    const Y = (v) => padT + innerH - (v / maxV) * innerH;
+    return { n, padL, padR, padT, padB, H, W, innerW, innerH, maxV, X, Y };
+  })();
 
   return (
     <div className="tab-content">
@@ -321,7 +335,7 @@ function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBa
           <div className="spread" style={{ marginBottom: 4, gap: 12, flexWrap: "wrap" }}>
             <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
               Performance trend
-              <span style={{ marginLeft: 8, fontSize: 11, color: "var(--text-3)", fontWeight: 400 }}>· per day</span>
+              <span style={{ marginLeft: 8, fontSize: 11, color: "var(--text-3)", fontWeight: 400 }}>· per week</span>
             </h3>
             <div style={{ display: "flex", gap: 14, fontSize: 11, color: "var(--text-3)" }}>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -332,56 +346,105 @@ function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBa
               </span>
             </div>
           </div>
-          <div ref={chartRef} style={{ marginTop: 8 }}>
-            {trend.length === 0 ? (
-              <div className="help" style={{ padding: "24px 0" }}>No days in this range.</div>
+          <div
+            ref={chartRef}
+            style={{ marginTop: 8, position: "relative" }}
+            onMouseMove={(e) => {
+              if (!chart || !chartRef.current) return;
+              const r = chartRef.current.getBoundingClientRect();
+              const cx = e.clientX - r.left;
+              let idx = chart.n <= 1 ? 0 : Math.round(((cx - chart.padL) / chart.innerW) * (chart.n - 1));
+              idx = Math.max(0, Math.min(chart.n - 1, idx));
+              setHover(prev => prev === idx ? prev : idx);
+            }}
+            onMouseLeave={() => setHover(null)}
+          >
+            {!chart ? (
+              <div className="help" style={{ padding: "24px 0" }}>No weeks in this range.</div>
             ) : (() => {
-              const n = trend.length;
-              const padL = 14, padR = 14, padT = 18, padB = 26;
-              const H = 184;
-              const W = Math.max(160, chartW);
-              const innerW = W - padL - padR;
-              const innerH = H - padT - padB;
-              const maxV = Math.max(1, ...trend.map(t => t.transferred));
-              const X = (i) => n <= 1 ? padL + innerW / 2 : padL + (i / (n - 1)) * innerW;
-              const Y = (v) => padT + innerH - (v / maxV) * innerH;
+              const { n, padL, padR, padT, H, W, maxV, X, Y } = chart;
               const path = (vals) => vals.map((v, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
               const transferred = trend.map(t => t.transferred);
               const converted = trend.map(t => t.ia + t.confirmed);
-              const dm = (ds) => { const d = U.parseDate(ds); return (d.getMonth() + 1) + "/" + d.getDate(); };
-              const labelStep = Math.max(1, Math.ceil(n / 10));
-              const showDots = n <= 45;
-              const showVals = n <= 14;
               return (
                 <svg width={W} height={H} style={{ display: "block" }}>
                   <line x1={padL} y1={Y(0)} x2={W - padR} y2={Y(0)} stroke="var(--border-subtle)"/>
                   <text x={padL} y={padT - 6} fontSize="9.5" fill="var(--text-4)" fontFamily="Geist Mono, monospace">{maxV}</text>
+                  {hover != null && trend[hover] && (
+                    <line x1={X(hover)} y1={padT} x2={X(hover)} y2={Y(0)} stroke="var(--border-strong)" strokeDasharray="3 3"/>
+                  )}
                   <path d={path(transferred)} fill="none" stroke="var(--text-3)" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
                   <path d={path(converted)} fill="none" stroke="var(--money-pos)" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round"/>
                   {trend.map((t, i) => {
                     const cv = t.ia + t.confirmed;
                     return (
-                      <g key={t.date}>
-                        {showDots && (
-                          <circle cx={X(i)} cy={Y(t.transferred)} r="2.6" fill="var(--bg-panel)" stroke="var(--text-3)" strokeWidth="1.5">
-                            <title>{`${dm(t.date)} · ${t.transferred} transferred`}</title>
-                          </circle>
-                        )}
-                        {showDots && (
-                          <circle cx={X(i)} cy={Y(cv)} r="3" fill="var(--money-pos)">
-                            <title>{`${dm(t.date)} · ${cv} converted (${t.ia} IA, ${t.confirmed} confirmed)`}</title>
-                          </circle>
-                        )}
-                        {showVals && cv > 0 && (
+                      <g key={t.start}>
+                        <circle cx={X(i)} cy={Y(t.transferred)} r="2.6" fill="var(--bg-panel)" stroke="var(--text-3)" strokeWidth="1.5"/>
+                        <circle cx={X(i)} cy={Y(cv)} r="3" fill="var(--money-pos)"/>
+                        {cv > 0 && (
                           <text x={X(i)} y={Y(cv) - 7} fontSize="9.5" fill="var(--money-pos)" textAnchor="middle" fontFamily="Geist Mono, monospace">{cv}</text>
                         )}
-                        {i % labelStep === 0 && (
-                          <text x={X(i)} y={H - 8} fontSize="9.5" fill="var(--text-4)" textAnchor="middle" fontFamily="Geist Mono, monospace">{dm(t.date)}</text>
-                        )}
+                        <text x={X(i)} y={H - 8} fontSize="9.5" fill="var(--text-4)" textAnchor="middle" fontFamily="Geist Mono, monospace">{t.label}</text>
                       </g>
                     );
                   })}
+                  {hover != null && trend[hover] && (
+                    <g>
+                      <circle cx={X(hover)} cy={Y(trend[hover].transferred)} r="3.8" fill="var(--bg-elev)" stroke="var(--text-2)" strokeWidth="1.75"/>
+                      <circle cx={X(hover)} cy={Y(trend[hover].ia + trend[hover].confirmed)} r="4.4" fill="var(--money-pos)" stroke="var(--bg-elev)" strokeWidth="1.6"/>
+                    </g>
+                  )}
                 </svg>
+              );
+            })()}
+            {hover != null && chart && trend[hover] && (() => {
+              const t = trend[hover];
+              const cv = t.ia + t.confirmed;
+              const conv = t.transferred > 0 ? cv / t.transferred : 0;
+              const tipW = 188;
+              let tx = chart.X(hover) + 16;
+              if (tx + tipW > chart.W) tx = chart.X(hover) - tipW - 16;
+              if (tx < 0) tx = 4;
+              const M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+              const sd = U.parseDate(t.start), ed = U.parseDate(t.end);
+              const span = sd && ed
+                ? (sd.getMonth() === ed.getMonth()
+                    ? `${M[sd.getMonth()]} ${sd.getDate()}–${ed.getDate()}`
+                    : `${M[sd.getMonth()]} ${sd.getDate()} – ${M[ed.getMonth()]} ${ed.getDate()}`)
+                : "";
+              const rows = [
+                ["Transferred", t.transferred, "var(--status-transfer-fg)"],
+                ["IAs", t.ia, "var(--status-ia-fg)"],
+                ["Confirms", t.confirmed, "var(--money-pos)"],
+              ];
+              return (
+                <div style={{
+                  position: "absolute", left: tx, top: 4, width: tipW,
+                  background: "var(--bg-elev)", border: "1px solid var(--border)",
+                  borderRadius: "var(--radius)", boxShadow: "var(--shadow-pop)",
+                  padding: "10px 12px", pointerEvents: "none", zIndex: 5,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                    <span className="mono" style={{ color: "var(--text)", fontWeight: 600, fontSize: 12 }}>{t.label}</span>
+                    <span className="mono" style={{ color: "var(--text-3)", fontSize: 11 }}>{span}</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12 }}>
+                    {rows.map(([label, val, color]) => (
+                      <div key={label} className="row" style={{ justifyContent: "space-between", gap: 12 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--text-3)" }}>
+                          <span style={{ width: 7, height: 7, borderRadius: 2, background: color }}/> {label}
+                        </span>
+                        <span className="mono" style={{ color: val ? "var(--text)" : "var(--text-4)" }}>{val || "—"}</span>
+                      </div>
+                    ))}
+                    <div className="row" style={{ justifyContent: "space-between", gap: 12, marginTop: 3, paddingTop: 7, borderTop: "1px solid var(--border-subtle)" }}>
+                      <span style={{ color: "var(--text-3)" }}>Conversion</span>
+                      <span className="mono" style={{ fontWeight: 600, color: cv > 0 ? "var(--money-pos)" : "var(--text-4)" }}>
+                        {cv} · {U.fmtPct(conv)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               );
             })()}
           </div>
