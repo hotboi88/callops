@@ -1005,7 +1005,7 @@ function WeeklyStats({ campaign, leads, shiftLogs, agents, attendanceOverrides, 
       };
     });
     return result.sort((a, b) => b.key.localeCompare(a.key));
-  }, [rangeLeads, rangeShifts, camAgents, attendanceOverrides, leadDays]);
+  }, [rangeLeads, rangeShifts, camAgents, attendanceOverrides, attData]);
 
   const maxWeekBill = useMemo(() => Math.max(1, ...weeks.map(w => w.bill)), [weeks]);
 
