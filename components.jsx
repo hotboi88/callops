@@ -1255,4 +1255,163 @@ function ConvBar({ iaShare, cnfShare, convRate, total, count }) {
   );
 }
 
-Object.assign(window, { Icon, Pill, Modal, Popover, TLBadge, Money, Kpi, Sparkline, DatePicker, TimePicker, Select, WeeklyStats, ConvBar, RangeNav, dayRange, monthRange, MonthRangePicker, DateRangePicker });
+// ---------- WeeklyTrendChart ----------
+// Two-line weekly chart (Transferred vs Converted) with a styled, cursor-
+// tracking hover tooltip. Scales to any number of weeks and resizes to its
+// container. `weeks`: [{ label, start, end, transferred, ia, confirmed }].
+function WeeklyTrendChart({ weeks }) {
+  const chartRef = useRef(null);
+  const [chartW, setChartW] = useState(640);
+  const [hover, setHover] = useState(null);
+
+  useEffect(() => {
+    const el = chartRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setChartW(el.clientWidth || 640));
+    ro.observe(el);
+    setChartW(el.clientWidth || 640);
+    return () => ro.disconnect();
+  }, []);
+
+  const chart = (() => {
+    const n = weeks.length;
+    if (!n) return null;
+    const padL = 14, padR = 14, padT = 18, padB = 26;
+    const H = 184;
+    const W = Math.max(160, chartW);
+    const innerW = W - padL - padR;
+    const innerH = H - padT - padB;
+    const maxV = Math.max(1, ...weeks.map(t => t.transferred));
+    const X = (i) => n <= 1 ? padL + innerW / 2 : padL + (i / (n - 1)) * innerW;
+    const Y = (v) => padT + innerH - (v / maxV) * innerH;
+    return { n, padL, padR, padT, padB, H, W, innerW, innerH, maxV, X, Y };
+  })();
+
+  // The final week is "partial" when today hasn't reached its Sunday end. A
+  // partial week is dashed + annotated so it never reads as a real drop-off.
+  const todayStr = U.dayStr(window.MOCK_TODAY);
+  const partialIdx = weeks.length && weeks[weeks.length - 1].end > todayStr ? weeks.length - 1 : -1;
+
+  return (
+    <div
+      ref={chartRef}
+      style={{ marginTop: 8, position: "relative" }}
+      onMouseMove={(e) => {
+        if (!chart || !chartRef.current) return;
+        const r = chartRef.current.getBoundingClientRect();
+        const cx = e.clientX - r.left;
+        let idx = chart.n <= 1 ? 0 : Math.round(((cx - chart.padL) / chart.innerW) * (chart.n - 1));
+        idx = Math.max(0, Math.min(chart.n - 1, idx));
+        setHover(prev => prev === idx ? prev : idx);
+      }}
+      onMouseLeave={() => setHover(null)}
+    >
+      {!chart ? (
+        <div className="help" style={{ padding: "24px 0" }}>No weeks to show yet.</div>
+      ) : (() => {
+        const { n, padL, padR, padT, H, W, maxV, X, Y } = chart;
+        const transferred = weeks.map(t => t.transferred);
+        const converted = weeks.map(t => t.ia + t.confirmed);
+        const labelStep = Math.max(1, Math.ceil(n / 12));
+        const showVals = n <= 16;
+        const allIdx = weeks.map((_, i) => i);
+        const linePath = (vals, idxs) => idxs.map((idx, k) => (k ? "L" : "M") + X(idx).toFixed(1) + " " + Y(vals[idx]).toFixed(1)).join(" ");
+        const solidIdx = partialIdx < 0 ? allIdx : allIdx.slice(0, partialIdx);
+        const dashIdx = partialIdx >= 1 ? [partialIdx - 1, partialIdx] : [];
+        return (
+          <svg width={W} height={H} style={{ display: "block" }}>
+            <line x1={padL} y1={Y(0)} x2={W - padR} y2={Y(0)} stroke="var(--border-subtle)"/>
+            <text x={padL} y={padT - 6} fontSize="9.5" fill="var(--text-4)" fontFamily="Geist Mono, monospace">{maxV}</text>
+            {partialIdx >= 0 && (
+              <text x={W - padR} y={padT - 6} fontSize="9" fill="var(--text-4)" textAnchor="end" fontFamily="Geist Mono, monospace">partial week</text>
+            )}
+            {hover != null && weeks[hover] && (
+              <line x1={X(hover)} y1={padT} x2={X(hover)} y2={Y(0)} stroke="var(--border-strong)" strokeDasharray="3 3"/>
+            )}
+            {solidIdx.length > 1 && <path d={linePath(transferred, solidIdx)} fill="none" stroke="var(--text-3)" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>}
+            {solidIdx.length > 1 && <path d={linePath(converted, solidIdx)} fill="none" stroke="var(--money-pos)" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round"/>}
+            {dashIdx.length === 2 && <path d={linePath(transferred, dashIdx)} fill="none" stroke="var(--text-3)" strokeWidth="1.75" strokeDasharray="3 3" strokeLinecap="round"/>}
+            {dashIdx.length === 2 && <path d={linePath(converted, dashIdx)} fill="none" stroke="var(--money-pos)" strokeWidth="2.25" strokeDasharray="3 3" strokeLinecap="round"/>}
+            {weeks.map((t, i) => {
+              const cv = t.ia + t.confirmed;
+              const isPartial = i === partialIdx;
+              return (
+                <g key={t.start}>
+                  <circle cx={X(i)} cy={Y(t.transferred)} r="2.6" fill="var(--bg-panel)" stroke="var(--text-3)" strokeWidth="1.5"/>
+                  <circle cx={X(i)} cy={Y(cv)} r="3" fill={isPartial ? "var(--bg-panel)" : "var(--money-pos)"} stroke="var(--money-pos)" strokeWidth={isPartial ? "1.5" : "0"}/>
+                  {showVals && cv > 0 && (
+                    <text x={X(i)} y={Y(cv) - 7} fontSize="9.5" fill="var(--money-pos)" textAnchor="middle" fontFamily="Geist Mono, monospace">{cv}</text>
+                  )}
+                  {i % labelStep === 0 && (
+                    <text x={X(i)} y={H - 8} fontSize="9.5" fill={isPartial ? "var(--text-3)" : "var(--text-4)"} textAnchor="middle" fontFamily="Geist Mono, monospace">{t.label}</text>
+                  )}
+                </g>
+              );
+            })}
+            {hover != null && weeks[hover] && (
+              <g>
+                <circle cx={X(hover)} cy={Y(weeks[hover].transferred)} r="3.8" fill="var(--bg-elev)" stroke="var(--text-2)" strokeWidth="1.75"/>
+                <circle cx={X(hover)} cy={Y(weeks[hover].ia + weeks[hover].confirmed)} r="4.4" fill="var(--money-pos)" stroke="var(--bg-elev)" strokeWidth="1.6"/>
+              </g>
+            )}
+          </svg>
+        );
+      })()}
+      {hover != null && chart && weeks[hover] && (() => {
+        const t = weeks[hover];
+        const cv = t.ia + t.confirmed;
+        const conv = t.transferred > 0 ? cv / t.transferred : 0;
+        const tipW = 188;
+        let tx = chart.X(hover) + 16;
+        if (tx + tipW > chart.W) tx = chart.X(hover) - tipW - 16;
+        if (tx < 0) tx = 4;
+        const M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        const sd = U.parseDate(t.start), ed = U.parseDate(t.end);
+        const span = sd && ed
+          ? (sd.getMonth() === ed.getMonth()
+              ? `${M[sd.getMonth()]} ${sd.getDate()}–${ed.getDate()}`
+              : `${M[sd.getMonth()]} ${sd.getDate()} – ${M[ed.getMonth()]} ${ed.getDate()}`)
+          : "";
+        const rows = [
+          ["Transferred", t.transferred, "var(--status-transfer-fg)"],
+          ["IAs", t.ia, "var(--status-ia-fg)"],
+          ["Confirms", t.confirmed, "var(--money-pos)"],
+        ];
+        return (
+          <div style={{
+            position: "absolute", left: tx, top: 4, width: tipW,
+            background: "var(--bg-elev)", border: "1px solid var(--border)",
+            borderRadius: "var(--radius)", boxShadow: "var(--shadow-pop)",
+            padding: "10px 12px", pointerEvents: "none", zIndex: 5,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <span className="mono" style={{ color: "var(--text)", fontWeight: 600, fontSize: 12 }}>{t.label}</span>
+              <span className="mono" style={{ color: "var(--text-3)", fontSize: 11 }}>{span}</span>
+              {hover === partialIdx && (
+                <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: "var(--bg-panel-2)", color: "var(--text-3)", border: "1px solid var(--border-subtle)", textTransform: "uppercase", letterSpacing: "0.04em" }}>partial</span>
+              )}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12 }}>
+              {rows.map(([label, val, color]) => (
+                <div key={label} className="row" style={{ justifyContent: "space-between", gap: 12 }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--text-3)" }}>
+                    <span style={{ width: 7, height: 7, borderRadius: 2, background: color }}/> {label}
+                  </span>
+                  <span className="mono" style={{ color: val ? "var(--text)" : "var(--text-4)" }}>{val || "—"}</span>
+                </div>
+              ))}
+              <div className="row" style={{ justifyContent: "space-between", gap: 12, marginTop: 3, paddingTop: 7, borderTop: "1px solid var(--border-subtle)" }}>
+                <span style={{ color: "var(--text-3)" }}>Conversion</span>
+                <span className="mono" style={{ fontWeight: 600, color: cv > 0 ? "var(--money-pos)" : "var(--text-4)" }}>
+                  {cv} · {U.fmtPct(conv)}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+Object.assign(window, { Icon, Pill, Modal, Popover, TLBadge, Money, Kpi, Sparkline, DatePicker, TimePicker, Select, WeeklyStats, ConvBar, RangeNav, dayRange, monthRange, MonthRangePicker, DateRangePicker, WeeklyTrendChart });

@@ -16,6 +16,38 @@ function BenchSub({ value, avg, fmt, showRel }) {
   );
 }
 
+// Floor-standing strip — every agent on the roster is a dot, ordered best
+// (#1, left) to worst; this agent's dot is enlarged and accent-colored, so
+// rank reads as a position in the pack rather than a progress meter.
+function RankStrip({ label, rank, n }) {
+  if (!rank || rank < 1 || n < 1) return null;
+  const top = rank <= 3;
+  return (
+    <div style={{ minWidth: 150 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 5 }}>
+        <span style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
+        <span className="mono" style={{ fontSize: 11, fontWeight: 600 }}>
+          <span style={{ color: top ? "var(--accent)" : "var(--text-2)" }}>#{rank}</span>
+          <span style={{ color: "var(--text-4)", fontWeight: 400 }}> of {n}</span>
+        </span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+        {Array.from({ length: n }, (_, i) => {
+          const isMe = i === rank - 1;
+          const sz = isMe ? 9 : 5;
+          return (
+            <div key={i} style={{
+              width: sz, height: sz, borderRadius: 999, flexShrink: 0,
+              background: isMe ? (top ? "var(--accent)" : "var(--text)") : "var(--bg-panel-2)",
+              border: isMe ? "none" : "1px solid var(--border-subtle)",
+            }}/>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBack }) {
   const AD_PRESETS = [
     { key: "7d", label: "7d", days: 7 },
@@ -28,25 +60,12 @@ function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBa
   const [customRange, setCustomRange] = useStateAD(null);
   const [pickerOpen, setPickerOpen] = useStateAD(false);
   const pickerBtnRef = useRefAD(null);
-  const chartRef = useRefAD(null);
-  const [chartW, setChartW] = useStateAD(640);
-  const [hover, setHover] = useStateAD(null);
   const preset = AD_PRESETS.find(p => p.key === dayKey) || AD_PRESETS[1];
   const presetRange = useMemoAD(() => window.dayRange(preset.days, dayOffset), [preset.days, dayOffset]);
   const range = customRange
     ? { startISO: customRange.startISO, endISO: customRange.endISO, label: `${U.shortDate(customRange.startISO)} – ${U.shortDate(customRange.endISO)}` }
     : presetRange;
   useEffectAD(() => { if (preset.days == null && dayOffset !== 0) setDayOffset(0); }, [preset.days]);
-
-  // Keep the trend line chart sized to its container.
-  useEffectAD(() => {
-    const el = chartRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => setChartW(el.clientWidth || 640));
-    ro.observe(el);
-    setChartW(el.clientWidth || 640);
-    return () => ro.disconnect();
-  }, []);
 
   const inRange = (d) => d >= range.startISO && d <= range.endISO;
   const todayISO = U.dayStr(window.MOCK_TODAY);
@@ -148,7 +167,19 @@ function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBa
       else off++;
       return { date: d, status: st };
     });
-    return { cells, present, absent, off, pct: (present + absent) > 0 ? present / (present + absent) : 0 };
+    // Current present-streak: walk back from the latest working day; "off"
+    // days are skipped, an absence breaks it.
+    let streak = 0;
+    for (let i = cells.length - 1; i >= 0; i--) {
+      if (cells[i].status === "off") continue;
+      if (cells[i].status === "present") streak++;
+      else break;
+    }
+    let lastAbsence = null;
+    for (let i = cells.length - 1; i >= 0; i--) {
+      if (cells[i].status === "absent") { lastAbsence = cells[i].date; break; }
+    }
+    return { cells, present, absent, off, streak, lastAbsence, pct: (present + absent) > 0 ? present / (present + absent) : 0 };
   }, [attData, agent, attendanceOverrides, range]);
 
   // Prior period (same length, immediately before) — for the conversion-drop flag.
@@ -173,37 +204,37 @@ function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBa
     return { transferred, conv: transferred > 0 ? (ia + confirmed) / transferred : 0 };
   }, [leads, campaign.id, agent.id, range, preset.days, customRange]);
 
-  // Weekly trend — continuous Mon-start weeks, clamped to tenure, last 14 shown.
+  // Weekly trend — every week of the agent's tenure (hire → today / termination).
+  // Independent of the page's date range; always the full history.
   const trend = useMemoAD(() => {
-    let startISO = range.startISO;
-    if (agent.date_added && agent.date_added > startISO) startISO = agent.date_added;
-    if (startISO === "0000-01-01") {
-      const dates = agentLeads.map(l => l.date);
+    const all = leads.filter(l => l.campaign_id === campaign.id && l.agent_id === agent.id);
+    let startISO = agent.date_added;
+    if (!startISO) {
+      const dates = all.map(l => l.date);
       startISO = dates.length ? dates.reduce((a, b) => a < b ? a : b) : todayISO;
     }
-    let endISO = range.endISO;
-    if (endISO > todayISO) endISO = todayISO;
+    let endISO = todayISO;
     if (agent.date_removed && agent.date_removed < endISO) endISO = agent.date_removed;
     const endD = U.parseDate(endISO);
     const weeks = [];
     let cur = U.startOfWeek(U.parseDate(startISO));
     let guard = 0;
-    while (cur <= endD && guard < 260) {
+    while (cur <= endD && guard < 400) {
       const wkStart = U.dayStr(cur);
       const wkEndD = new Date(cur); wkEndD.setDate(wkEndD.getDate() + 6);
       weeks.push({ label: U.weekLabel(wkStart), start: wkStart, end: U.dayStr(wkEndD), transferred: 0, ia: 0, confirmed: 0 });
       cur = new Date(cur); cur.setDate(cur.getDate() + 7);
       guard++;
     }
-    agentLeads.forEach(l => {
+    all.forEach(l => {
       const w = weeks.find(x => l.date >= x.start && l.date <= x.end);
       if (!w) return;
       if (l.status !== "pending") w.transferred++;
       if (l.status === "ia") w.ia++;
       if (l.status === "confirmed") w.confirmed++;
     });
-    return weeks.slice(-14);
-  }, [agentLeads, range, agent, todayISO]);
+    return weeks;
+  }, [leads, campaign.id, agent, todayISO]);
 
   const flags = useMemoAD(() => {
     const out = [];
@@ -236,21 +267,6 @@ function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBa
   const leadsPerDay = daysOnFloor > 0 ? me.total / daysOnFloor : null;
   const convPerDay = daysOnFloor > 0 ? me.converted / daysOnFloor : null;
 
-  // Trend line geometry — shared by the chart render and the hover handler.
-  const chart = (() => {
-    const n = trend.length;
-    if (!n) return null;
-    const padL = 14, padR = 14, padT = 18, padB = 26;
-    const H = 184;
-    const W = Math.max(160, chartW);
-    const innerW = W - padL - padR;
-    const innerH = H - padT - padB;
-    const maxV = Math.max(1, ...trend.map(t => t.transferred));
-    const X = (i) => n <= 1 ? padL + innerW / 2 : padL + (i / (n - 1)) * innerW;
-    const Y = (v) => padT + innerH - (v / maxV) * innerH;
-    return { n, padL, padR, padT, padB, H, W, innerW, innerH, maxV, X, Y };
-  })();
-
   return (
     <div className="tab-content">
       {/* Header — back + identity + range control */}
@@ -272,6 +288,12 @@ function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBa
             </span>
           </h1>
           <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 4 }}>{tenure}</div>
+          {agent.status === "active" && ranking.n > 0 && (ranking.convRank > 0 || ranking.rateRank > 0) && (
+            <div style={{ display: "flex", gap: 22, marginTop: 12, flexWrap: "wrap" }}>
+              <RankStrip label="Conversions" rank={ranking.convRank} n={ranking.n}/>
+              <RankStrip label="Conversion rate" rank={ranking.rateRank} n={ranking.n}/>
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {customRange ? (
@@ -335,7 +357,7 @@ function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBa
           <div className="spread" style={{ marginBottom: 4, gap: 12, flexWrap: "wrap" }}>
             <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
               Performance trend
-              <span style={{ marginLeft: 8, fontSize: 11, color: "var(--text-3)", fontWeight: 400 }}>· per week</span>
+              <span style={{ marginLeft: 8, fontSize: 11, color: "var(--text-3)", fontWeight: 400 }}>· every week on campaign</span>
             </h3>
             <div style={{ display: "flex", gap: 14, fontSize: 11, color: "var(--text-3)" }}>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -346,108 +368,7 @@ function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBa
               </span>
             </div>
           </div>
-          <div
-            ref={chartRef}
-            style={{ marginTop: 8, position: "relative" }}
-            onMouseMove={(e) => {
-              if (!chart || !chartRef.current) return;
-              const r = chartRef.current.getBoundingClientRect();
-              const cx = e.clientX - r.left;
-              let idx = chart.n <= 1 ? 0 : Math.round(((cx - chart.padL) / chart.innerW) * (chart.n - 1));
-              idx = Math.max(0, Math.min(chart.n - 1, idx));
-              setHover(prev => prev === idx ? prev : idx);
-            }}
-            onMouseLeave={() => setHover(null)}
-          >
-            {!chart ? (
-              <div className="help" style={{ padding: "24px 0" }}>No weeks in this range.</div>
-            ) : (() => {
-              const { n, padL, padR, padT, H, W, maxV, X, Y } = chart;
-              const path = (vals) => vals.map((v, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
-              const transferred = trend.map(t => t.transferred);
-              const converted = trend.map(t => t.ia + t.confirmed);
-              return (
-                <svg width={W} height={H} style={{ display: "block" }}>
-                  <line x1={padL} y1={Y(0)} x2={W - padR} y2={Y(0)} stroke="var(--border-subtle)"/>
-                  <text x={padL} y={padT - 6} fontSize="9.5" fill="var(--text-4)" fontFamily="Geist Mono, monospace">{maxV}</text>
-                  {hover != null && trend[hover] && (
-                    <line x1={X(hover)} y1={padT} x2={X(hover)} y2={Y(0)} stroke="var(--border-strong)" strokeDasharray="3 3"/>
-                  )}
-                  <path d={path(transferred)} fill="none" stroke="var(--text-3)" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d={path(converted)} fill="none" stroke="var(--money-pos)" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round"/>
-                  {trend.map((t, i) => {
-                    const cv = t.ia + t.confirmed;
-                    return (
-                      <g key={t.start}>
-                        <circle cx={X(i)} cy={Y(t.transferred)} r="2.6" fill="var(--bg-panel)" stroke="var(--text-3)" strokeWidth="1.5"/>
-                        <circle cx={X(i)} cy={Y(cv)} r="3" fill="var(--money-pos)"/>
-                        {cv > 0 && (
-                          <text x={X(i)} y={Y(cv) - 7} fontSize="9.5" fill="var(--money-pos)" textAnchor="middle" fontFamily="Geist Mono, monospace">{cv}</text>
-                        )}
-                        <text x={X(i)} y={H - 8} fontSize="9.5" fill="var(--text-4)" textAnchor="middle" fontFamily="Geist Mono, monospace">{t.label}</text>
-                      </g>
-                    );
-                  })}
-                  {hover != null && trend[hover] && (
-                    <g>
-                      <circle cx={X(hover)} cy={Y(trend[hover].transferred)} r="3.8" fill="var(--bg-elev)" stroke="var(--text-2)" strokeWidth="1.75"/>
-                      <circle cx={X(hover)} cy={Y(trend[hover].ia + trend[hover].confirmed)} r="4.4" fill="var(--money-pos)" stroke="var(--bg-elev)" strokeWidth="1.6"/>
-                    </g>
-                  )}
-                </svg>
-              );
-            })()}
-            {hover != null && chart && trend[hover] && (() => {
-              const t = trend[hover];
-              const cv = t.ia + t.confirmed;
-              const conv = t.transferred > 0 ? cv / t.transferred : 0;
-              const tipW = 188;
-              let tx = chart.X(hover) + 16;
-              if (tx + tipW > chart.W) tx = chart.X(hover) - tipW - 16;
-              if (tx < 0) tx = 4;
-              const M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-              const sd = U.parseDate(t.start), ed = U.parseDate(t.end);
-              const span = sd && ed
-                ? (sd.getMonth() === ed.getMonth()
-                    ? `${M[sd.getMonth()]} ${sd.getDate()}–${ed.getDate()}`
-                    : `${M[sd.getMonth()]} ${sd.getDate()} – ${M[ed.getMonth()]} ${ed.getDate()}`)
-                : "";
-              const rows = [
-                ["Transferred", t.transferred, "var(--status-transfer-fg)"],
-                ["IAs", t.ia, "var(--status-ia-fg)"],
-                ["Confirms", t.confirmed, "var(--money-pos)"],
-              ];
-              return (
-                <div style={{
-                  position: "absolute", left: tx, top: 4, width: tipW,
-                  background: "var(--bg-elev)", border: "1px solid var(--border)",
-                  borderRadius: "var(--radius)", boxShadow: "var(--shadow-pop)",
-                  padding: "10px 12px", pointerEvents: "none", zIndex: 5,
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                    <span className="mono" style={{ color: "var(--text)", fontWeight: 600, fontSize: 12 }}>{t.label}</span>
-                    <span className="mono" style={{ color: "var(--text-3)", fontSize: 11 }}>{span}</span>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12 }}>
-                    {rows.map(([label, val, color]) => (
-                      <div key={label} className="row" style={{ justifyContent: "space-between", gap: 12 }}>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--text-3)" }}>
-                          <span style={{ width: 7, height: 7, borderRadius: 2, background: color }}/> {label}
-                        </span>
-                        <span className="mono" style={{ color: val ? "var(--text)" : "var(--text-4)" }}>{val || "—"}</span>
-                      </div>
-                    ))}
-                    <div className="row" style={{ justifyContent: "space-between", gap: 12, marginTop: 3, paddingTop: 7, borderTop: "1px solid var(--border-subtle)" }}>
-                      <span style={{ color: "var(--text-3)" }}>Conversion</span>
-                      <span className="mono" style={{ fontWeight: 600, color: cv > 0 ? "var(--money-pos)" : "var(--text-4)" }}>
-                        {cv} · {U.fmtPct(conv)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
+          <WeeklyTrendChart weeks={trend}/>
         </div>
 
         <div className="card" style={{ padding: 16, display: "flex", flexDirection: "column" }}>
@@ -472,17 +393,49 @@ function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBa
 
       {/* Attendance */}
       <div className="card" style={{ padding: 16, marginBottom: 12 }}>
-        <div className="spread" style={{ marginBottom: 12 }}>
-          <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
-            Attendance
-            <span style={{ marginLeft: 8, fontSize: 11, color: "var(--text-3)", fontWeight: 400 }}>
-              · present {attendance.present} / absent {attendance.absent} / off {attendance.off}
-            </span>
-          </h3>
-          <span className="mono" style={{ fontSize: 16, fontWeight: 600, color: attendance.pct >= 0.85 ? "var(--money-pos)" : attendance.pct >= 0.7 ? "var(--money-spiff)" : attendance.present + attendance.absent > 0 ? "var(--status-dnc-fg)" : "var(--text-3)" }}>
-            {attendance.present + attendance.absent > 0 ? U.fmtPct(attendance.pct) : "—"}
-          </span>
-        </div>
+        {(() => {
+          const a = attendance;
+          const total = a.present + a.absent;
+          const pctColor = a.pct >= 0.85 ? "var(--money-pos)" : a.pct >= 0.7 ? "var(--money-spiff)" : total > 0 ? "var(--status-dnc-fg)" : "var(--text-3)";
+          const absAgo = (() => {
+            if (!a.lastAbsence) return "";
+            const days = Math.round((U.parseDate(todayISO) - U.parseDate(a.lastAbsence)) / 86400000);
+            if (days <= 0) return "today";
+            if (days === 1) return "yesterday";
+            if (days < 14) return days + " days ago";
+            if (days < 60) return Math.round(days / 7) + " weeks ago";
+            return Math.round(days / 30) + " months ago";
+          })();
+          return (
+            <div className="spread" style={{ marginBottom: 14, alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>Attendance</div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginTop: 3 }}>
+                  <span className="mono" style={{ fontSize: 30, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1, color: pctColor }}>
+                    {total > 0 ? Math.round(a.pct * 100) + "%" : "—"}
+                  </span>
+                  <span style={{ fontSize: 12, color: "var(--text-3)" }}>
+                    {a.present} of {total} days
+                    {a.streak > 0 && <> · <span style={{ color: "var(--text-2)" }}>{a.streak}-day streak</span></>}
+                  </span>
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Last absence</div>
+                <div style={{ fontSize: 12, marginTop: 4 }}>
+                  {a.lastAbsence ? (
+                    <span>
+                      <span className="mono" style={{ color: "var(--text)", fontWeight: 600 }}>{U.dayOfWeek(a.lastAbsence)}, {U.weekLabel(a.lastAbsence)}</span>
+                      <span style={{ color: "var(--text-4)" }}> · {absAgo}</span>
+                    </span>
+                  ) : (
+                    <span style={{ color: total > 0 ? "var(--money-pos)" : "var(--text-4)" }}>{total > 0 ? "None — perfect" : "—"}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
         {attendance.cells.length === 0 ? (
           <div className="help">No working days reported in this range.</div>
         ) : (
@@ -499,37 +452,6 @@ function AgentDetail({ campaign, agent, agents, leads, attendanceOverrides, onBa
                 }}
               />
             ))}
-          </div>
-        )}
-      </div>
-
-      {/* Standing */}
-      <div className="card" style={{ padding: 16, marginBottom: 12 }}>
-        <h3 style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 600 }}>Standing on the floor</h3>
-        {agent.status !== "active" ? (
-          <div className="help">Not ranked — agent is inactive.</div>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-            {[
-              { label: "By conversions (IA + Confirmed)", rank: ranking.convRank },
-              { label: "By conversion rate", rank: ranking.rateRank },
-            ].map((row, i) => {
-              const pct = ranking.n > 0 && row.rank > 0 ? (ranking.n - row.rank + 1) / ranking.n : 0;
-              return (
-                <div key={i}>
-                  <div className="spread" style={{ marginBottom: 6 }}>
-                    <span style={{ fontSize: 11.5, color: "var(--text-3)" }}>{row.label}</span>
-                    <span className="mono" style={{ fontSize: 13, fontWeight: 600 }}>
-                      {row.rank > 0 ? `#${row.rank}` : "—"}
-                      <span style={{ color: "var(--text-4)", fontWeight: 400 }}> of {ranking.n}</span>
-                    </span>
-                  </div>
-                  <div style={{ height: 6, borderRadius: 3, background: "var(--bg-panel-2)", overflow: "hidden" }}>
-                    <div style={{ width: `${Math.round(pct * 100)}%`, height: "100%", background: pct >= 0.66 ? "var(--money-pos)" : pct >= 0.33 ? "var(--money-spiff)" : "var(--status-dnc-fg)" }}/>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         )}
       </div>

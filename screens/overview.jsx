@@ -10,15 +10,24 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
     const s = U.startOfWeek(todayDate), e = U.endOfWeek(todayDate);
     return { start: U.dayStr(s), end: U.dayStr(e), label: "This week" };
   }, []);
-  // Days elapsed since this week's Monday (0 = Mon … 6 = Sun). Last week's
-  // comparison window is capped to the same slice, so a partial week (e.g. a
-  // Monday morning) isn't measured against a full prior week.
+  // Week-over-week deltas compare COMPLETED days only — never today (still in
+  // progress) and never a partial week against a full one. elapsedDays counts
+  // the finished days of the current week (0 on Monday → delta suppressed).
   const elapsedDays = (todayDate.getDay() + 6) % 7;
-  const lw = useMemoOV(() => {
-    const d = new Date(todayDate); d.setDate(d.getDate() - 7);
-    const lwStart = U.startOfWeek(d);
-    const lwEnd = new Date(lwStart); lwEnd.setDate(lwEnd.getDate() + elapsedDays);
-    return { start: U.dayStr(lwStart), end: U.dayStr(lwEnd), label: "Last week to date" };
+  const cmp = useMemoOV(() => {
+    const wkStart = U.startOfWeek(todayDate);
+    const curEnd = new Date(todayDate); curEnd.setDate(curEnd.getDate() - 1);
+    const prevStart = new Date(wkStart); prevStart.setDate(prevStart.getDate() - 7);
+    const prevEnd = new Date(prevStart); prevEnd.setDate(prevEnd.getDate() + elapsedDays - 1);
+    const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    return {
+      hasData: elapsedDays > 0,
+      curStart: U.dayStr(wkStart),
+      curEnd: U.dayStr(curEnd),
+      prevStart: U.dayStr(prevStart),
+      prevEnd: U.dayStr(prevEnd),
+      through: elapsedDays > 0 ? DOW[elapsedDays - 1] : "",
+    };
   }, []);
 
   // Helpers
@@ -29,23 +38,31 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
   const activeAgents = camAgents.filter(a => a.status === "active");
 
   const twLeads = useMemoOV(() => camLeads.filter(l => inRange(l, tw)), [camLeads, tw]);
-  const lwLeads = useMemoOV(() => camLeads.filter(l => inRange(l, lw)), [camLeads, lw]);
+  // Completed-days lead sets the week-over-week deltas are measured on.
+  const cmpCur = useMemoOV(() => cmp.hasData ? camLeads.filter(l => l.date >= cmp.curStart && l.date <= cmp.curEnd) : [], [camLeads, cmp]);
+  const cmpPrev = useMemoOV(() => cmp.hasData ? camLeads.filter(l => l.date >= cmp.prevStart && l.date <= cmp.prevEnd) : [], [camLeads, cmp]);
   const todayLeads = useMemoOV(() => camLeads.filter(l => l.date === today), [camLeads, today]);
 
   const sum = (arr, fn) => arr.reduce((s, x) => s + (fn(x) || 0), 0);
   const count = (arr, fn) => arr.filter(fn).length;
 
+  // Card values = live week-to-date (today included).
   const twBill = sum(twLeads, l => l.client_commission);
-  const lwBill = sum(lwLeads, l => l.client_commission);
-  const billDelta = lwBill > 0 ? (twBill - lwBill) / lwBill : 0;
-
   const twIA = count(twLeads, l => l.status === "ia");
-  const lwIA = count(lwLeads, l => l.status === "ia");
-  const iaDelta = lwIA > 0 ? (twIA - lwIA) / lwIA : 0;
-
   const twLeadCount = twLeads.length;
-  const lwLeadCount = lwLeads.length;
-  const leadDelta = lwLeadCount > 0 ? (twLeadCount - lwLeadCount) / lwLeadCount : 0;
+
+  // Deltas = completed days this week vs the same completed days last week.
+  const cmpCurBill = sum(cmpCur, l => l.client_commission);
+  const cmpPrevBill = sum(cmpPrev, l => l.client_commission);
+  const billDelta = cmpPrevBill > 0 ? (cmpCurBill - cmpPrevBill) / cmpPrevBill : 0;
+
+  const cmpCurIA = count(cmpCur, l => l.status === "ia");
+  const cmpPrevIA = count(cmpPrev, l => l.status === "ia");
+  const iaDelta = cmpPrevIA > 0 ? (cmpCurIA - cmpPrevIA) / cmpPrevIA : 0;
+
+  const cmpCurLeads = cmpCur.length;
+  const cmpPrevLeads = cmpPrev.length;
+  const leadDelta = cmpPrevLeads > 0 ? (cmpCurLeads - cmpPrevLeads) / cmpPrevLeads : 0;
 
   // Today snapshot
   const todayShift = useMemoOV(() => {
@@ -86,23 +103,32 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
       .slice(0, 6);
   }, [camLeads]);
 
-  // 14-day mini chart of total leads + IAs
-  const last14 = useMemoOV(() => {
-    const out = [];
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date(todayDate); d.setDate(d.getDate() - i);
-      const ds = U.dayStr(d);
-      const day = camLeads.filter(l => l.date === ds);
-      out.push({
-        date: ds,
-        dow: U.dayOfWeek(ds),
-        total: day.length,
-        ia: day.filter(l => l.status === "ia").length,
-        confirmed: day.filter(l => l.status === "confirmed").length,
-      });
+  // Every week of the campaign — room-wide weekly lead-flow line chart.
+  const roomWeeks = useMemoOV(() => {
+    const dates = camLeads.map(l => l.date);
+    const earliest = dates.length ? dates.reduce((a, b) => a < b ? a : b) : null;
+    let startISO = campaign.created_at;
+    if (!startISO || startISO === "0000-01-01") startISO = earliest || U.dayStr(todayDate);
+    else if (earliest && earliest < startISO) startISO = earliest;
+    const weeks = [];
+    let cur = U.startOfWeek(U.parseDate(startISO));
+    let guard = 0;
+    while (cur <= todayDate && guard < 400) {
+      const wkStart = U.dayStr(cur);
+      const wkEndD = new Date(cur); wkEndD.setDate(wkEndD.getDate() + 6);
+      weeks.push({ label: U.weekLabel(wkStart), start: wkStart, end: U.dayStr(wkEndD), transferred: 0, ia: 0, confirmed: 0 });
+      cur = new Date(cur); cur.setDate(cur.getDate() + 7);
+      guard++;
     }
-    return out;
-  }, [camLeads]);
+    camLeads.forEach(l => {
+      const w = weeks.find(x => l.date >= x.start && l.date <= x.end);
+      if (!w) return;
+      if (l.status !== "pending") w.transferred++;
+      if (l.status === "ia") w.ia++;
+      if (l.status === "confirmed") w.confirmed++;
+    });
+    return weeks;
+  }, [camLeads, campaign.created_at]);
 
   // Attention items
   const attentionItems = useMemoOV(() => {
@@ -147,9 +173,6 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
     return items.slice(0, 4);
   }, [twLeads, camLeads, agents, todayShift]);
 
-  // Max for mini chart bars
-  const maxBar = Math.max(1, ...last14.map(d => d.total));
-
   return (
     <div className="tab-content">
       {/* Greeting + headline KPIs */}
@@ -171,18 +194,18 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
           tone="accent"
           label="Bill (this week)"
           value={U.fmtMoney(twBill)}
-          sub={<DeltaSub current={twBill} prev={lwBill} delta={billDelta} format={U.fmtMoney}/>}
+          sub={<DeltaSub delta={billDelta} prev={cmpPrevBill} format={U.fmtMoney} cmp={cmp}/>}
         />
         <Kpi
           label="Leads (this week)"
           value={U.fmtNum(twLeadCount, { dashZero: true })}
-          sub={<DeltaSub current={twLeadCount} prev={lwLeadCount} delta={leadDelta} format={U.fmtNum}/>}
+          sub={<DeltaSub delta={leadDelta} prev={cmpPrevLeads} format={U.fmtNum} cmp={cmp}/>}
         />
         <Kpi
           tone="tl"
           label="IAs (this week)"
           value={U.fmtNum(twIA, { dashZero: true })}
-          sub={<DeltaSub current={twIA} prev={lwIA} delta={iaDelta} format={U.fmtNum}/>}
+          sub={<DeltaSub delta={iaDelta} prev={cmpPrevIA} format={U.fmtNum} cmp={cmp}/>}
         />
         <Kpi
           label="Active roster"
@@ -191,26 +214,23 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
         />
       </div>
 
-      {/* HERO: 14-day lead flow, full width */}
+      {/* Room-wide weekly lead flow */}
       <div className="card" style={{ padding: "16px 18px", marginBottom: 12 }}>
-        <div className="spread" style={{ marginBottom: 14 }}>
+        <div className="spread" style={{ marginBottom: 4, gap: 12, flexWrap: "wrap" }}>
           <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
             Lead flow
-            <span style={{ marginLeft: 8, fontSize: 11, color: "var(--text-3)", fontWeight: 400 }}>· last 14 days</span>
+            <span style={{ marginLeft: 8, fontSize: 11, color: "var(--text-3)", fontWeight: 400 }}>· every week, whole room</span>
           </h3>
           <div style={{ display: "flex", gap: 14, fontSize: 11, color: "var(--text-3)" }}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 9, height: 9, borderRadius: 2, background: "var(--bg-panel-2)", border: "1px solid var(--border)" }}/> Other
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 16, height: 2, background: "var(--text-3)", borderRadius: 2 }}/> Transferred
             </span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 9, height: 9, borderRadius: 2, background: "var(--status-ia-fg)" }}/> IAs
-            </span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 9, height: 9, borderRadius: 2, background: "var(--money-pos)" }}/> Confirms
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 16, height: 2, background: "var(--money-pos)", borderRadius: 2 }}/> Converted
             </span>
           </div>
         </div>
-        <LeadFlowChart last14={last14} maxBar={maxBar} today={today}/>
+        <WeeklyTrendChart weeks={roomWeeks}/>
       </div>
 
       {/* Multi-week trend table */}
@@ -369,121 +389,6 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
   );
 }
 
-// 14-day lead flow chart with custom (no-delay, styled, cursor-following) tooltip
-function LeadFlowChart({ last14, maxBar, today }) {
-  const [hover, setHover] = React.useState(null); // { idx, x, y } | null
-  const wrapRef = React.useRef(null);
-
-  const handleMove = (e) => {
-    if (!wrapRef.current) return;
-    const r = wrapRef.current.getBoundingClientRect();
-    const x = e.clientX - r.left;
-    const y = e.clientY - r.top;
-    const n = last14.length;
-    // Bar zones are equal width across the grid. Use rect width to map x → idx.
-    const idx = Math.min(n - 1, Math.max(0, Math.floor((x / r.width) * n)));
-    setHover({ idx, x, y });
-  };
-
-  const handleLeave = () => setHover(null);
-
-  return (
-    <div
-      ref={wrapRef}
-      style={{ position: "relative" }}
-      onMouseMove={handleMove}
-      onMouseLeave={handleLeave}
-    >
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${last14.length}, 1fr)`, gap: 5, alignItems: "end", height: 200 }}>
-        {last14.map((d, idx) => {
-          const h = (d.total / maxBar) * 100;
-          const isToday = d.date === today;
-          const isHover = hover?.idx === idx;
-          const cnfShare = d.total > 0 ? (d.confirmed / d.total) * 100 : 0;
-          const iaShare = d.total > 0 ? (d.ia / d.total) * 100 : 0;
-          return (
-            <div
-              key={d.date}
-              style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6, height: "100%" }}
-            >
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-                <div style={{
-                  height: `${Math.max(h, d.total > 0 ? 4 : 0)}%`,
-                  background: "var(--bg-panel-2)",
-                  border: "1px solid " + (isToday ? "var(--accent-line)" : isHover ? "var(--border-strong)" : "var(--border-subtle)"),
-                  borderRadius: 4,
-                  position: "relative",
-                  overflow: "hidden",
-                  pointerEvents: "none",
-                  filter: isHover ? "brightness(1.15)" : "none",
-                }}>
-                  {d.confirmed > 0 && <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: `${cnfShare}%`, background: "var(--money-pos)", opacity: 0.9 }}/>}
-                  {d.ia > 0 && <div style={{ position: "absolute", left: 0, right: 0, bottom: `${cnfShare}%`, height: `${iaShare}%`, background: "var(--status-ia-fg)", opacity: 0.9 }}/>}
-                </div>
-              </div>
-              <div style={{ textAlign: "center", lineHeight: 1.1, pointerEvents: "none" }}>
-                <div className="mono" style={{ fontSize: 11, color: isToday ? "var(--accent)" : isHover ? "var(--text)" : "var(--text-2)", fontWeight: isToday || isHover ? 600 : 400 }}>{U.parseDate(d.date).getDate()}</div>
-                <div style={{ fontSize: 10, color: "var(--text-4)" }}>{d.dow.charAt(0)}</div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Cursor-following tooltip */}
-      {hover !== null && (() => {
-        const d = last14[hover.idx];
-        const rect = wrapRef.current?.getBoundingClientRect();
-        if (!rect) return null;
-        const tipW = 180;
-        // Default: tooltip to the right of cursor with offset
-        let tx = hover.x + 16;
-        if (tx + tipW > rect.width) tx = hover.x - tipW - 16;
-        const ty = Math.max(0, hover.y - 60);
-        return (
-          <div style={{
-            position: "absolute",
-            left: tx,
-            top: ty,
-            background: "var(--bg-elev)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius)",
-            boxShadow: "var(--shadow-pop)",
-            padding: "10px 12px",
-            zIndex: 5,
-            width: tipW,
-            pointerEvents: "none",
-          }}>
-            <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
-              <span className="mono" style={{ color: "var(--text)", fontWeight: 500 }}>{U.dayOfWeek(d.date)}</span>
-              <span className="mono" style={{ color: "var(--text-3)" }}>{U.shortDate(d.date)}</span>
-              {d.date === today && <span className="tag" style={{ color: "var(--accent)", borderColor: "var(--accent-line)", background: "var(--accent-soft)", height: 16, padding: "0 5px", fontSize: 9 }}>today</span>}
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
-              <div className="row" style={{ justifyContent: "space-between", gap: 12 }}>
-                <span style={{ color: "var(--text-3)" }}>Total</span>
-                <span className="mono money-bold">{d.total}</span>
-              </div>
-              <div className="row" style={{ justifyContent: "space-between", gap: 12 }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--text-3)" }}>
-                  <span style={{ width: 7, height: 7, borderRadius: 2, background: "var(--status-ia-fg)" }}/> IAs
-                </span>
-                <span className="mono" style={{ color: d.ia ? "var(--status-ia-fg)" : "var(--text-4)" }}>{d.ia || "—"}</span>
-              </div>
-              <div className="row" style={{ justifyContent: "space-between", gap: 12 }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--text-3)" }}>
-                  <span style={{ width: 7, height: 7, borderRadius: 2, background: "var(--money-pos)" }}/> Confirms
-                </span>
-                <span className="mono" style={{ color: d.confirmed ? "var(--money-pos)" : "var(--text-4)" }}>{d.confirmed || "—"}</span>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-    </div>
-  );
-}
-
 function StatTile({ label, value, tone, bold }) {  let color = "var(--text)";
   if (tone === "pos") color = "var(--money-pos)";
   else if (tone === "ia") color = "var(--status-ia-fg)";
@@ -531,9 +436,9 @@ function StatusBar({ leads }) {
   );
 }
 
-function DeltaSub({ current, prev, delta, format }) {
-  if (prev === 0 && current === 0) return <span>—</span>;
-  if (prev === 0) return <span style={{ color: "var(--text-3)" }}>new this week</span>;
+function DeltaSub({ delta, prev, format, cmp }) {
+  if (!cmp.hasData) return <span style={{ color: "var(--text-3)" }}>Week in progress · day 1</span>;
+  if (prev === 0) return <span style={{ color: "var(--text-3)" }}>nothing last wk thru {cmp.through}</span>;
   const up = delta >= 0;
   const color = up ? "var(--money-pos)" : "var(--status-dnc-fg)";
   return (
@@ -541,7 +446,7 @@ function DeltaSub({ current, prev, delta, format }) {
       <span style={{ color }}>
         {up ? "▲" : "▼"} {Math.abs(Math.round(delta * 100))}%
       </span>
-      <span style={{ color: "var(--text-4)" }}> vs {format(prev)} last wk to date</span>
+      <span style={{ color: "var(--text-4)" }}> vs {format(prev)} last wk thru {cmp.through}</span>
     </span>
   );
 }
