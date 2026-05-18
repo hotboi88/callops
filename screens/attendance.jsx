@@ -179,18 +179,6 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
       if (cur !== "present") onSetAttendance(a.id, date, "present");
     });
   };
-  const markAllPresentForAgent = (agentId) => {
-    const ag = campaignAgents.find(a => a.id === agentId);
-    dateCols.forEach(d => {
-      const dow = U.parseDate(d).getDay();
-      if (dow === 0 || dow === 6) return;
-      if (ag && ag.date_added && d < ag.date_added) return;
-      if (ag && ag.date_removed && d > ag.date_removed) return;
-      const cur = attMap[agentId + "|" + d]?.status;
-      if (cur !== "present") onSetAttendance(agentId, d, "present");
-    });
-  };
-
   return (
     <div className="tab-content">
       {/* Header */}
@@ -268,7 +256,7 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
       </div>
 
       <div className="help" style={{ marginBottom: 12 }}>
-        Click a cell to toggle present → absent → off · click a date header to mark everyone present · click an agent name to mark every weekday · lime ring = auto-detected
+        Click a cell to toggle present → absent → off · click a date header to mark everyone present · lime ring = auto-detected
       </div>
 
       <div className="att-grid">
@@ -312,11 +300,7 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
                 else if (a.pct < 0.8) pctCls = "att-warn-amber";
                 return (
                   <tr key={a.id} style={a.status !== "active" ? { opacity: 0.5 } : {}}>
-                    <td
-                      title="Click to mark this agent present every weekday in the visible window"
-                      onClick={() => markAllPresentForAgent(a.id)}
-                      style={{ cursor: "pointer" }}
-                    >
+                    <td>
                       <span>{a.full_name}</span>
                       {a.is_tl && <TLBadge small/>}
                     </td>
@@ -364,7 +348,7 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
           <span>Auto-detected from lead activity — click any cell to override</span>
         </span>
         <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-4)" }}>
-          Tip: click a date header to mark everyone present that day · click an agent name to mark all weekdays
+          Tip: click a date header to mark everyone present that day
         </span>
       </div>
 
