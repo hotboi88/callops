@@ -203,8 +203,8 @@ function CampaignShell(props) {
   const { campaign, tab, onTab } = props;
   const tabs = [
     ["overview", "Overview", "activity"],
-    ["attendance", "Attendance", "check"],
     ["lead_log", "Lead Log", "list"],
+    ["attendance", "Attendance", "check"],
     ["commission", "Commission Sheet", "download"],
     ["agent_report", "Agent Report", "users"],
     ["floor_report", "Floor Report", "grid"],
@@ -274,6 +274,8 @@ function CampaignShell(props) {
           leads={props.leads}
           attendanceOverrides={props.attendanceOverrides}
           onSetAttendance={props.onSetAttendance}
+          onAddAgent={(name, isTl) => props.onAddAgent(campaign.id, name, isTl)}
+          onUpdateAgent={props.onUpdateAgent}
         />
       )}
       {tab === "settings" && (
@@ -283,8 +285,6 @@ function CampaignShell(props) {
           profile={props.profile}
           canDo={props.canDo}
           onUpdateCampaign={props.onUpdateCampaign}
-          onAddAgent={(name, isTl) => props.onAddAgent(campaign.id, name, isTl)}
-          onUpdateAgent={props.onUpdateAgent}
           onExport={() => {
             const data = {
               exported_at: new Date().toISOString(),

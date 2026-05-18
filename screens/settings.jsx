@@ -1,52 +1,11 @@
 // Settings — campaign config + agent roster
 const { useState: useStateST, useMemo: useMemoST } = React;
 
-// Inline-editable agent name cell: click the name to rename, Enter/blur saves.
-function EditableAgentName({ agent, onUpdateAgent }) {
-  const [editing, setEditing] = useStateST(false);
-  const [val, setVal] = useStateST(agent.full_name);
-
-  const save = () => {
-    const name = val.trim();
-    if (name && name !== agent.full_name) onUpdateAgent(agent.id, { full_name: name });
-    else setVal(agent.full_name);
-    setEditing(false);
-  };
-
-  if (editing) {
-    return (
-      <input
-        className="input"
-        style={{ maxWidth: 240, padding: "4px 8px" }}
-        value={val}
-        autoFocus
-        onChange={(e) => setVal(e.target.value)}
-        onBlur={save}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") save();
-          if (e.key === "Escape") { setVal(agent.full_name); setEditing(false); }
-        }}
-      />
-    );
-  }
-  return (
-    <span
-      style={{ cursor: "pointer" }}
-      title="Click to rename"
-      onClick={() => { setVal(agent.full_name); setEditing(true); }}
-    >
-      {agent.full_name}
-    </span>
-  );
-}
-
-function Settings({ campaign, agents, profile, onUpdateCampaign, onAddAgent, onUpdateAgent, onExport, onDeleteCampaign, leadsCount }) {
+function Settings({ campaign, agents, profile, onUpdateCampaign, onExport, onDeleteCampaign, leadsCount }) {
   const [form, setForm] = useStateST({ ...campaign });
   const [savedFlash, setSavedFlash] = useStateST(false);
   const dirty = Object.keys(form).some(k => form[k] !== campaign[k]);
 
-  const [newAgent, setNewAgent] = useStateST("");
-  const [showAlumni, setShowAlumni] = useStateST(false);
   const [confirmReset, setConfirmReset] = useStateST(false);
   const [confirmDelete, setConfirmDelete] = useStateST(false);
   const [deleteText, setDeleteText] = useStateST("");
@@ -59,11 +18,6 @@ function Settings({ campaign, agents, profile, onUpdateCampaign, onAddAgent, onU
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1400);
   };
-
-  const activeAgents = agents
-    .filter(a => a.campaign_id === campaign.id && a.status !== "removed")
-    .sort((a, b) => (a.status === "active" ? 0 : 1) - (b.status === "active" ? 0 : 1));
-  const removed = agents.filter(a => a.campaign_id === campaign.id && a.status === "removed");
 
   return (
     <div className="tab-content">
@@ -141,107 +95,6 @@ function Settings({ campaign, agents, profile, onUpdateCampaign, onAddAgent, onU
               Changing rates recomputes all existing leads.
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Agent roster */}
-      <div className="settings-grid" style={{ marginBottom: 24 }}>
-        <div className="label-col">
-          <h4>Agent roster</h4>
-          <p>{activeAgents.length} on roster · {activeAgents.filter(a => a.is_tl).length} team leads.</p>
-        </div>
-        <div className="card" style={{ padding: 0 }}>
-          <div style={{ padding: 12, borderBottom: "1px solid var(--border-subtle)", display: "flex", gap: 8 }}>
-            <input
-              className="input"
-              placeholder="Add agent by name…"
-              value={newAgent}
-              onChange={(e) => setNewAgent(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && newAgent.trim()) {
-                  onAddAgent(newAgent.trim(), false);
-                  setNewAgent("");
-                }
-              }}
-            />
-            <button
-              className="btn btn-primary"
-              onClick={() => { if (newAgent.trim()) { onAddAgent(newAgent.trim(), false); setNewAgent(""); } }}
-              disabled={!newAgent.trim()}
-            >
-              Add
-            </button>
-          </div>
-          <table className="table" style={{ borderRadius: 0 }}>
-            <thead>
-              <tr>
-                <th>Agent</th>
-                <th style={{ width: 100 }}>Status</th>
-                <th style={{ width: 70 }}>Role</th>
-                <th style={{ width: 125 }}>Started</th>
-                <th style={{ width: 125 }}>Terminated</th>
-                <th style={{ width: 170, textAlign: "right" }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeAgents.map(a => (
-                <tr key={a.id}>
-                  <td><EditableAgentName agent={a} onUpdateAgent={onUpdateAgent}/></td>
-                  <td>
-                    {a.status === "active"
-                      ? <span className="tag" style={{ color: "var(--money-pos)", borderColor: "var(--accent-line)", background: "var(--accent-soft)" }}>Active</span>
-                      : <span className="tag tag-inactive">Inactive</span>}
-                  </td>
-                  <td>{a.is_tl ? <span className="tag tag-tl">★ TL</span> : <span className="tag">Agent</span>}</td>
-                  <td><DatePicker value={a.date_added || ""} onChange={(v) => onUpdateAgent(a.id, { date_added: v })}/></td>
-                  <td><DatePicker value={a.date_removed || ""} onChange={(v) => onUpdateAgent(a.id, { date_removed: v || null })} clearable placeholder="—"/></td>
-                  <td style={{ textAlign: "right" }}>
-                    <button className="btn btn-sm btn-ghost" onClick={() => onUpdateAgent(a.id, { is_tl: !a.is_tl })}>
-                      {a.is_tl ? "Remove TL" : "Make TL"}
-                    </button>
-                    <button className="btn btn-sm btn-ghost" onClick={() => onUpdateAgent(a.id, { status: a.status === "active" ? "inactive" : "active" })}>
-                      {a.status === "active" ? "Deactivate" : "Reactivate"}
-                    </button>
-                    <button className="btn btn-sm btn-ghost" onClick={() => onUpdateAgent(a.id, { status: "removed" })} style={{ color: "var(--status-dnc-fg)" }}>
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {activeAgents.length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: "center", padding: 24 }} className="muted">No agents on roster.</td></tr>
-              )}
-            </tbody>
-          </table>
-
-          {removed.length > 0 && (
-            <div style={{ borderTop: "1px solid var(--border-subtle)" }}>
-              <button
-                className="btn btn-ghost"
-                style={{ width: "100%", justifyContent: "flex-start", padding: "10px 14px", borderRadius: 0, height: "auto" }}
-                onClick={() => setShowAlumni(s => !s)}
-              >
-                <Icon name={showAlumni ? "chevron" : "chevronRight"} size={12}/>
-                Alumni ({removed.length})
-              </button>
-              {showAlumni && (
-                <table className="table" style={{ borderRadius: 0 }}>
-                  <tbody>
-                    {removed.map(a => (
-                      <tr key={a.id} style={{ opacity: 0.7 }}>
-                        <td>{a.full_name}</td>
-                        <td style={{ textAlign: "right" }}>
-                          <button className="btn btn-sm" onClick={() => onUpdateAgent(a.id, { status: "active" })}>
-                            <Icon name="refresh" size={12}/> Reactivate
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
         </div>
       </div>
 

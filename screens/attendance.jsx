@@ -1,7 +1,44 @@
 // Attendance — its own tab, dedicated to taking attendance for managers
 const { useState: useStateATT, useMemo: useMemoATT, useEffect: useEffectATT } = React;
 
-function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttendance }) {
+// Inline-editable agent name cell: click the name to rename, Enter/blur saves.
+function EditableAgentName({ agent, onUpdateAgent }) {
+  const [editing, setEditing] = useStateATT(false);
+  const [val, setVal] = useStateATT(agent.full_name);
+  const save = () => {
+    const name = val.trim();
+    if (name && name !== agent.full_name) onUpdateAgent(agent.id, { full_name: name });
+    else setVal(agent.full_name);
+    setEditing(false);
+  };
+  if (editing) {
+    return (
+      <input
+        className="input"
+        style={{ maxWidth: 240, padding: "4px 8px" }}
+        value={val}
+        autoFocus
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") save();
+          if (e.key === "Escape") { setVal(agent.full_name); setEditing(false); }
+        }}
+      />
+    );
+  }
+  return (
+    <span
+      style={{ cursor: "pointer" }}
+      title="Click to rename"
+      onClick={() => { setVal(agent.full_name); setEditing(true); }}
+    >
+      {agent.full_name}
+    </span>
+  );
+}
+
+function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttendance, onAddAgent, onUpdateAgent }) {
   const [attDays, setAttDays] = useStateATT(14);
   const [attOffset, setAttOffset] = useStateATT(0);
 
@@ -26,6 +63,16 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
   }, [dateCols]);
 
   const campaignAgents = useMemoATT(() => agents.filter(a => a.campaign_id === campaign.id && a.status === "active"), [agents, campaign.id]);
+
+  // ---- Roster (active first, then inactive; alumni separate) ----
+  const [newAgent, setNewAgent] = useStateATT("");
+  const [showAlumni, setShowAlumni] = useStateATT(false);
+  const rosterAgents = useMemoATT(() =>
+    agents
+      .filter(a => a.campaign_id === campaign.id && a.status !== "removed")
+      .sort((a, b) => (a.status === "active" ? 0 : 1) - (b.status === "active" ? 0 : 1)),
+    [agents, campaign.id]);
+  const removedAgents = useMemoATT(() => agents.filter(a => a.campaign_id === campaign.id && a.status === "removed"), [agents, campaign.id]);
 
   const attMap = useMemoATT(() => {
     const m = {};
@@ -273,6 +320,109 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
         <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-4)" }}>
           Tip: click a date header to mark everyone present that day · click an agent name to mark all weekdays
         </span>
+      </div>
+
+      {/* Agent roster */}
+      <div style={{ marginTop: 28, paddingTop: 20, borderTop: "1px solid var(--border-subtle)" }}>
+        <div style={{ marginBottom: 12 }}>
+          <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Agent roster</h2>
+          <div className="help" style={{ marginTop: 2 }}>
+            {rosterAgents.length} on roster · {rosterAgents.filter(a => a.is_tl).length} team leads.
+          </div>
+        </div>
+        <div className="card" style={{ padding: 0 }}>
+          <div style={{ padding: 12, borderBottom: "1px solid var(--border-subtle)", display: "flex", gap: 8 }}>
+            <input
+              className="input"
+              placeholder="Add agent by name…"
+              value={newAgent}
+              onChange={(e) => setNewAgent(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newAgent.trim()) {
+                  onAddAgent(newAgent.trim(), false);
+                  setNewAgent("");
+                }
+              }}
+            />
+            <button
+              className="btn btn-primary"
+              onClick={() => { if (newAgent.trim()) { onAddAgent(newAgent.trim(), false); setNewAgent(""); } }}
+              disabled={!newAgent.trim()}
+            >
+              Add
+            </button>
+          </div>
+          <table className="table" style={{ borderRadius: 0 }}>
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th style={{ width: 100 }}>Status</th>
+                <th style={{ width: 70 }}>Role</th>
+                <th style={{ width: 125 }}>Started</th>
+                <th style={{ width: 125 }}>Terminated</th>
+                <th style={{ width: 170, textAlign: "right" }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rosterAgents.map(a => (
+                <tr key={a.id}>
+                  <td><EditableAgentName agent={a} onUpdateAgent={onUpdateAgent}/></td>
+                  <td>
+                    {a.status === "active"
+                      ? <span className="tag" style={{ color: "var(--money-pos)", borderColor: "var(--accent-line)", background: "var(--accent-soft)" }}>Active</span>
+                      : <span className="tag tag-inactive">Inactive</span>}
+                  </td>
+                  <td>{a.is_tl ? <span className="tag tag-tl">★ TL</span> : <span className="tag">Agent</span>}</td>
+                  <td><DatePicker value={a.date_added || ""} onChange={(v) => onUpdateAgent(a.id, { date_added: v })}/></td>
+                  <td><DatePicker value={a.date_removed || ""} onChange={(v) => onUpdateAgent(a.id, { date_removed: v || null })} clearable placeholder="—"/></td>
+                  <td style={{ textAlign: "right" }}>
+                    <button className="btn btn-sm btn-ghost" onClick={() => onUpdateAgent(a.id, { is_tl: !a.is_tl })}>
+                      {a.is_tl ? "Remove TL" : "Make TL"}
+                    </button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => onUpdateAgent(a.id, { status: a.status === "active" ? "inactive" : "active" })}>
+                      {a.status === "active" ? "Deactivate" : "Reactivate"}
+                    </button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => onUpdateAgent(a.id, { status: "removed" })} style={{ color: "var(--status-dnc-fg)" }}>
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {rosterAgents.length === 0 && (
+                <tr><td colSpan={6} style={{ textAlign: "center", padding: 24 }} className="muted">No agents on roster.</td></tr>
+              )}
+            </tbody>
+          </table>
+
+          {removedAgents.length > 0 && (
+            <div style={{ borderTop: "1px solid var(--border-subtle)" }}>
+              <button
+                className="btn btn-ghost"
+                style={{ width: "100%", justifyContent: "flex-start", padding: "10px 14px", borderRadius: 0, height: "auto" }}
+                onClick={() => setShowAlumni(s => !s)}
+              >
+                <Icon name={showAlumni ? "chevron" : "chevronRight"} size={12}/>
+                Alumni ({removedAgents.length})
+              </button>
+              {showAlumni && (
+                <table className="table" style={{ borderRadius: 0 }}>
+                  <tbody>
+                    {removedAgents.map(a => (
+                      <tr key={a.id} style={{ opacity: 0.7 }}>
+                        <td>{a.full_name}</td>
+                        <td style={{ textAlign: "right" }}>
+                          <button className="btn btn-sm" onClick={() => onUpdateAgent(a.id, { status: "active" })}>
+                            <Icon name="refresh" size={12}/> Reactivate
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
