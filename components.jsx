@@ -682,7 +682,7 @@ function MonthRangePicker({ open, onClose, anchorRef, value, onChange }) {
 
   return (
     <Popover open={open} onClose={onClose} anchorRef={anchorRef} align="end">
-      <div style={{ padding: 14, minWidth: 280 }}>
+      <div style={{ padding: 14, width: 280 }}>
         <div className="row" style={{ alignItems: "center", marginBottom: 12 }}>
           <button className="icon-btn" onClick={() => setViewYear(y => y - 1)} title="Earlier year">
             <Icon name="arrowLeft" size={13}/>
@@ -805,7 +805,7 @@ function DateRangePicker({ open, onClose, anchorRef, value, onChange }) {
 
   return (
     <Popover open={open} onClose={onClose} anchorRef={anchorRef} align="end">
-      <div style={{ padding: 14, minWidth: 280 }}>
+      <div style={{ padding: 14, width: 280 }}>
         <div className="row" style={{ alignItems: "center", marginBottom: 10 }}>
           <button className="icon-btn" onClick={goPrev} title="Previous month">
             <Icon name="arrowLeft" size={13}/>
