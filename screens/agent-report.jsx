@@ -211,6 +211,7 @@ function WeeklyGrid({ campaign, leads, agents }) {
   const { weeks, grid, gridAgents } = useMemoAR(() => {
     const weekSet = new Set();
     const seenAgents = new Set();
+    const conv = {};
     const g = {};
     leads.forEach(l => {
       if (l.campaign_id !== campaign.id) return;
@@ -224,11 +225,13 @@ function WeeklyGrid({ campaign, leads, agents }) {
       if (l.status !== "pending") c.t++;
       if (l.status === "ia") c.i++;
       if (l.status === "confirmed") c.c++;
+      if (l.status === "ia" || l.status === "confirmed") conv[l.agent_id] = (conv[l.agent_id] || 0) + 1;
     });
     const weeksOut = Array.from(weekSet).sort();
+    // Same ordering as the Agent Performance table: by IAs + Confirms, descending.
     const gridAgents = agents
       .filter(a => a.campaign_id === campaign.id && a.status === "active" && seenAgents.has(a.id))
-      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+      .sort((a, b) => (conv[b.id] || 0) - (conv[a.id] || 0));
     return { weeks: weeksOut, grid: g, gridAgents };
   }, [leads, agents, campaign.id, wgRange, wgPreset.days, wgCustom]);
 
