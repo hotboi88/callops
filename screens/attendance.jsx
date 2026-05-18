@@ -97,6 +97,10 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
       .sort((a, b) => (a.status === "active" ? 0 : 1) - (b.status === "active" ? 0 : 1)),
     [agents, campaign.id]);
   const removedAgents = useMemoATT(() => agents.filter(a => a.campaign_id === campaign.id && a.status === "removed"), [agents, campaign.id]);
+  const [rosterSearch, setRosterSearch] = useStateATT("");
+  const rosterQ = rosterSearch.trim().toLowerCase();
+  const rosterFiltered = rosterQ ? rosterAgents.filter(a => (a.full_name || "").toLowerCase().includes(rosterQ)) : rosterAgents;
+  const rosterActive = rosterAgents.filter(a => a.status === "active").length;
 
   const attMap = useMemoATT(() => {
     const m = {};
@@ -366,10 +370,21 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
 
       {/* Agent roster */}
       <div style={{ marginTop: 28, paddingTop: 20, borderTop: "1px solid var(--border-subtle)" }}>
-        <div style={{ marginBottom: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Agent roster</h2>
-          <div className="help" style={{ marginTop: 2 }}>
-            {rosterAgents.length} on roster · {rosterAgents.filter(a => a.is_tl).length} team leads.
+        <div style={{ marginBottom: 12, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Agent roster</h2>
+            <div className="help" style={{ marginTop: 2 }}>
+              {rosterAgents.length} on roster · {rosterActive} active · {rosterAgents.length - rosterActive} inactive · {rosterAgents.filter(a => a.is_tl).length} team leads.
+            </div>
+          </div>
+          <div className="search-wrap" style={{ maxWidth: 240 }}>
+            <Icon name="search"/>
+            <input
+              className="input"
+              placeholder="Search roster…"
+              value={rosterSearch}
+              onChange={(e) => setRosterSearch(e.target.value)}
+            />
           </div>
         </div>
         <div className="card" style={{ padding: 0 }}>
@@ -406,7 +421,7 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
               </tr>
             </thead>
             <tbody>
-              {rosterAgents.map(a => (
+              {rosterFiltered.map(a => (
                 <tr key={a.id}>
                   <td><EditableAgentName agent={a} onUpdateAgent={onUpdateAgent}/></td>
                   <td>
@@ -430,8 +445,8 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
                   </td>
                 </tr>
               ))}
-              {rosterAgents.length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: "center", padding: 24 }} className="muted">No agents on roster.</td></tr>
+              {rosterFiltered.length === 0 && (
+                <tr><td colSpan={6} style={{ textAlign: "center", padding: 24 }} className="muted">{rosterQ ? "No agents match your search." : "No agents on roster."}</td></tr>
               )}
             </tbody>
           </table>
