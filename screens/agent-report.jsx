@@ -1,8 +1,7 @@
 // Agent Report — weekly per-agent breakdown
 const { useState: useStateAR, useMemo: useMemoAR, useEffect: useEffectAR, useRef: useRefAR } = React;
 
-function AgentReport({ campaign, agents, leads, onAddAgent, onOpenAgent }) {
-  const [showAdd, setShowAdd] = useStateAR(false);
+function AgentReport({ campaign, agents, leads, onOpenAgent }) {
 
   const AR_PRESETS = [
     { key: "7d", label: "7d", days: 7 },
@@ -111,9 +110,6 @@ function AgentReport({ campaign, agents, leads, onAddAgent, onOpenAgent }) {
             value={customRange || (preset.days != null ? presetRange : null)}
             onChange={(r) => { setCustomRange(r); setDayOffset(0); }}
           />
-          <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
-            <Icon name="plus" size={13}/> Add Agent
-          </button>
         </div>
       </div>
 
@@ -179,13 +175,6 @@ function AgentReport({ campaign, agents, leads, onAddAgent, onOpenAgent }) {
         agents={agents}
         order={rows.map(r => r.id)}
       />
-
-      {showAdd && (
-        <AddAgentModal campaign={campaign} onClose={() => setShowAdd(false)} onSave={(name, isTl) => {
-          onAddAgent(name, isTl);
-          setShowAdd(false);
-        }}/>
-      )}
     </div>
   );
 }
@@ -394,39 +383,6 @@ function WeeklyGrid({ campaign, leads, agents, order }) {
         )}
       </div>
     </>
-  );
-}
-
-function AddAgentModal({ campaign, onClose, onSave }) {
-  const [name, setName] = useStateAR("");
-  const [isTl, setIsTl] = useStateAR(false);
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title="Add Agent"
-      width="440px"
-      footer={
-        <>
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => name.trim() && onSave(name.trim(), isTl)} disabled={!name.trim()}>
-            Add agent
-          </button>
-        </>
-      }
-    >
-      <div className="stack">
-        <div className="field">
-          <label>Full name</label>
-          <input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Devon Reyes" onKeyDown={(e) => e.key === "Enter" && name.trim() && onSave(name.trim(), isTl)}/>
-        </div>
-        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, cursor: "pointer" }}>
-          <input type="checkbox" checked={isTl} onChange={(e) => setIsTl(e.target.checked)}/>
-          <span>Team Lead</span>
-          <span className="help" style={{ marginLeft: 6 }}>(eligible to receive coaching bonuses)</span>
-        </label>
-      </div>
-    </Modal>
   );
 }
 
