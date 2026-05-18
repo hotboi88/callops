@@ -206,15 +206,24 @@ function WeeklyGrid({ campaign, leads, agents, order }) {
   const wgInRange = (d) => (wgPreset.days == null && !wgCustom) || (d >= wgRange.startISO && d <= wgRange.endISO);
 
   const { weeks, grid, gridAgents } = useMemoAR(() => {
-    const weekSet = new Set();
+    // Track weeks by their Monday date (ISO string) — year-aware and sortable,
+    // unlike a bare "WKnn" label which collides and mis-sorts across years.
+    const weekMap = new Map();
     const seenAgents = new Set();
     const conv = {};
     const g = {};
     leads.forEach(l => {
       if (l.campaign_id !== campaign.id) return;
       if (!wgInRange(l.date)) return;
-      const w = U.weekLabel(l.date);
-      weekSet.add(w);
+      const d = U.parseDate(l.date);
+      if (!d) return;
+      const monday = U.startOfWeek(d);
+      const w = U.dayStr(monday);
+      if (!weekMap.has(w)) {
+        const sun = new Date(monday);
+        sun.setDate(sun.getDate() + 6);
+        weekMap.set(w, { key: w, label: U.weekLabel(l.date), start: w, end: U.dayStr(sun) });
+      }
       seenAgents.add(l.agent_id);
       const k = l.agent_id + "|" + w;
       const c = (g[k] ||= { t: 0, i: 0, c: 0 });
@@ -224,7 +233,7 @@ function WeeklyGrid({ campaign, leads, agents, order }) {
       if (l.status === "confirmed") c.c++;
       if (l.status === "ia" || l.status === "confirmed") conv[l.agent_id] = (conv[l.agent_id] || 0) + 1;
     });
-    const weeksOut = Array.from(weekSet).sort();
+    const weeksOut = Array.from(weekMap.values()).sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
     // Mirror the Agent Performance table's exact order (conversion supremacy).
     // Falls back to in-grid IAs+Confirms if no order was supplied.
     const orderIdx = {};
@@ -238,18 +247,8 @@ function WeeklyGrid({ campaign, leads, agents, order }) {
     return { weeks: weeksOut, grid: g, gridAgents };
   }, [leads, agents, campaign.id, wgRange, wgPreset.days, wgCustom, order]);
 
-  const WINDOW = 8;
-  const [offset, setOffset] = useStateAR(0);
-  const total = weeks.length;
-  const end = total - offset;
-  const start = Math.max(0, end - WINDOW);
-  const visible = weeks.slice(start, end);
-  const canBack = start > 0;
-  const canFwd = offset > 0;
-
-  useEffectAR(() => {
-    if (offset > Math.max(0, total - WINDOW)) setOffset(0);
-  }, [total]);
+  // Show every week in range — the grid scrolls horizontally for long campaigns.
+  const visible = weeks;
 
   return (
     <>
@@ -305,39 +304,13 @@ function WeeklyGrid({ campaign, leads, agents, order }) {
             onClose={() => setWgPickerOpen(false)}
             anchorRef={wgPickerRef}
             value={wgCustom || (wgPreset.days != null ? wgPresetRange : null)}
-            onChange={(r) => { setWgCustom(r); setWgOffset(0); setOffset(0); }}
+            onChange={(r) => { setWgCustom(r); setWgOffset(0); }}
           />
-          {total > WINDOW && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 4, paddingLeft: 10, borderLeft: "1px solid var(--border-subtle)" }}>
-              <span className="help" style={{ fontFamily: "Geist Mono, monospace" }}>
-                {visible[0]}{visible.length > 1 ? "–" + visible[visible.length - 1] : ""}
-                <span className="muted-2" style={{ marginLeft: 6 }}>· {total} weeks</span>
-              </span>
-              <button
-                className="icon-btn"
-                onClick={() => setOffset(o => o + WINDOW)}
-                disabled={!canBack}
-                style={!canBack ? { opacity: 0.35, cursor: "not-allowed" } : {}}
-                title="Earlier weeks"
-              >
-                <Icon name="arrowLeft" size={13}/>
-              </button>
-              <button
-                className="btn btn-sm"
-                onClick={() => setOffset(0)}
-                disabled={!canFwd}
-                style={!canFwd ? { opacity: 0.35, cursor: "default" } : {}}
-              >Latest</button>
-              <button
-                className="icon-btn"
-                onClick={() => setOffset(o => Math.max(0, o - WINDOW))}
-                disabled={!canFwd}
-                style={!canFwd ? { opacity: 0.35, cursor: "not-allowed" } : {}}
-                title="Later weeks"
-              >
-                <Icon name="chevronRight" size={13}/>
-              </button>
-            </div>
+          {visible.length > 0 && (
+            <span className="help" style={{ fontFamily: "Geist Mono, monospace", marginLeft: 4, paddingLeft: 10, borderLeft: "1px solid var(--border-subtle)" }}>
+              {visible[0].label}{visible.length > 1 ? "–" + visible[visible.length - 1].label : ""}
+              <span className="muted-2" style={{ marginLeft: 6 }}>· {visible.length} week{visible.length === 1 ? "" : "s"}</span>
+            </span>
           )}
         </div>
       </div>
@@ -349,8 +322,8 @@ function WeeklyGrid({ campaign, leads, agents, order }) {
           <div style={{ display: "inline-grid", gridTemplateColumns: `180px repeat(${visible.length}, 100px)`, gap: 4 }}>
             <div style={{ fontSize: 11, color: "var(--text-3)", padding: "6px 4px", letterSpacing: "0.03em", textTransform: "uppercase" }}>Agent</div>
             {visible.map(w => (
-              <div key={w} style={{ fontFamily: "Geist Mono, monospace", fontSize: 11, color: "var(--text-3)", padding: "6px 4px" }}>
-                {w}
+              <div key={w.key} style={{ fontFamily: "Geist Mono, monospace", fontSize: 11, color: "var(--text-3)", padding: "6px 4px" }}>
+                {w.label}
               </div>
             ))}
             {gridAgents.map(a => (
@@ -360,14 +333,15 @@ function WeeklyGrid({ campaign, leads, agents, order }) {
                 </div>
                 {visible.map(w => {
                   // Blank weeks before the agent was hired / after they left.
-                  const wkNum = parseInt(String(w).replace(/\D/g, ""), 10);
-                  const startWk = a.date_added ? U.weekNumber(a.date_added) : 0;
-                  const endWk = a.date_removed ? U.weekNumber(a.date_removed) : 9999;
-                  if (wkNum < startWk || wkNum > endWk) return <div key={w}/>;
-                  const c = grid[a.id + "|" + w] || { t: 0, i: 0, c: 0 };
+                  // Date comparison — year-aware, unlike bare week numbers.
+                  if ((a.date_added && a.date_added > w.end) ||
+                      (a.date_removed && a.date_removed < w.start)) {
+                    return <div key={w.key}/>;
+                  }
+                  const c = grid[a.id + "|" + w.key] || { t: 0, i: 0, c: 0 };
                   const isEmpty = c.t + c.i + c.c === 0;
                   return (
-                    <div key={w} className="weekly-cell" style={isEmpty ? { background: "transparent", border: "1px dashed var(--border-subtle)" } : {}}>
+                    <div key={w.key} className="weekly-cell" style={isEmpty ? { background: "transparent", border: "1px dashed var(--border-subtle)" } : {}}>
                       <div className="label">T · I · C</div>
                       <div className="nums">
                         <span className={c.t ? "n-t" : "n-zero"}>{c.t}</span>
