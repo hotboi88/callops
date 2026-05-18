@@ -62,7 +62,35 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
     return `${MONTHS[first.getMonth()]} ${first.getDate()} – ${MONTHS[last.getMonth()]} ${last.getDate()}, ${last.getFullYear()}`;
   }, [dateCols]);
 
-  const campaignAgents = useMemoATT(() => agents.filter(a => a.campaign_id === campaign.id && a.status === "active"), [agents, campaign.id]);
+  // Earliest date the board may scroll back to — campaign start, or the first
+  // agent hire date if that predates it.
+  const campaignStart = useMemoATT(() => {
+    let earliest = campaign.created_at || U.dayStr(window.MOCK_TODAY);
+    agents.forEach(a => {
+      if (a.campaign_id === campaign.id && a.date_added && a.date_added < earliest) earliest = a.date_added;
+    });
+    return earliest;
+  }, [agents, campaign.id, campaign.created_at]);
+  const maxOffset = useMemoATT(() => {
+    const totalDays = Math.round((U.parseDate(U.dayStr(window.MOCK_TODAY)) - U.parseDate(campaignStart)) / 86400000);
+    return Math.max(0, totalDays - (attDays - 1));
+  }, [campaignStart, attDays]);
+  useEffectATT(() => {
+    if (attOffset > maxOffset) setAttOffset(maxOffset);
+  }, [maxOffset]);
+
+  // Agents employed at any point in the visible window — so historical
+  // attendance % reflects the roster as it was then, not just who's active now.
+  const campaignAgents = useMemoATT(() => {
+    const wStart = dateCols[dateCols.length - 1];
+    const wEnd = dateCols[0];
+    return agents.filter(a => {
+      if (a.campaign_id !== campaign.id || a.status === "removed") return false;
+      const started = a.date_added || "0000-01-01";
+      const ended = a.date_removed || "9999-12-31";
+      return started <= wEnd && ended >= wStart;
+    });
+  }, [agents, campaign.id, dateCols]);
 
   // ---- Roster (active first, then inactive; alumni separate) ----
   const [newAgent, setNewAgent] = useStateATT("");
@@ -90,6 +118,7 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
         } else {
           const dow = U.parseDate(d).getDay();
           if (a.date_added && d < a.date_added) m[key] = { status: "off", auto: true, preHire: true };
+          else if (a.date_removed && d > a.date_removed) m[key] = { status: "off", auto: true, postTerm: true };
           else if (leadDays[key]) m[key] = { status: "present", auto: true };
           else if (dow === 0 || dow === 6) m[key] = { status: "off", auto: true };
           else m[key] = { status: "absent", auto: true };
@@ -141,14 +170,19 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
 
   const markAllPresentForDate = (date) => {
     campaignAgents.forEach(a => {
+      if (a.date_added && date < a.date_added) return;
+      if (a.date_removed && date > a.date_removed) return;
       const cur = attMap[a.id + "|" + date]?.status;
       if (cur !== "present") onSetAttendance(a.id, date, "present");
     });
   };
   const markAllPresentForAgent = (agentId) => {
+    const ag = campaignAgents.find(a => a.id === agentId);
     dateCols.forEach(d => {
       const dow = U.parseDate(d).getDay();
       if (dow === 0 || dow === 6) return;
+      if (ag && ag.date_added && d < ag.date_added) return;
+      if (ag && ag.date_removed && d > ag.date_removed) return;
       const cur = attMap[agentId + "|" + d]?.status;
       if (cur !== "present") onSetAttendance(agentId, d, "present");
     });
@@ -212,9 +246,9 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
           value={String(attDays)}
           onChange={(k) => { setAttDays(Number(k)); setAttOffset(0); }}
           rangeLabel={rangeLabel}
-          canBack={true}
+          canBack={attOffset < maxOffset}
           canForward={attOffset > 0}
-          onBack={() => setAttOffset(o => o + attDays)}
+          onBack={() => setAttOffset(o => Math.min(maxOffset, o + attDays))}
           onForward={() => setAttOffset(o => Math.max(0, o - attDays))}
           onReset={() => setAttOffset(0)}
           canReset={attOffset !== 0}
