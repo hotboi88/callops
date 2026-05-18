@@ -9,7 +9,7 @@ function FloorReport({ campaign, agents, leads, shiftLogs, attendanceOverrides, 
     { key: "90d", label: "90d", days: 90 },
     { key: "all", label: "All", days: null },
   ];
-  const [dailyKey, setDailyKey] = useStateFR("30d");
+  const [dailyKey, setDailyKey] = useStateFR("all");
   const [dailyOffset, setDailyOffset] = useStateFR(0);
   const [customRange, setCustomRange] = useStateFR(null);
   const [pickerOpen, setPickerOpen] = useStateFR(false);
