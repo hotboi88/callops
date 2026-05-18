@@ -79,18 +79,14 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
     if (attOffset > maxOffset) setAttOffset(maxOffset);
   }, [maxOffset]);
 
-  // Agents employed at any point in the visible window — so historical
-  // attendance % reflects the roster as it was then, not just who's active now.
+  // Active agents only by default (clean for day-to-day attendance). The
+  // "All agents" toggle adds inactive/terminated agents below the active block.
+  const [showInactive, setShowInactive] = useStateATT(false);
   const campaignAgents = useMemoATT(() => {
-    const wStart = dateCols[dateCols.length - 1];
-    const wEnd = dateCols[0];
-    return agents.filter(a => {
-      if (a.campaign_id !== campaign.id || a.status === "removed") return false;
-      const started = a.date_added || "0000-01-01";
-      const ended = a.date_removed || "9999-12-31";
-      return started <= wEnd && ended >= wStart;
-    });
-  }, [agents, campaign.id, dateCols]);
+    let list = agents.filter(a => a.campaign_id === campaign.id && a.status !== "removed");
+    if (!showInactive) list = list.filter(a => a.status === "active");
+    return list;
+  }, [agents, campaign.id, showInactive]);
 
   // ---- Roster (active first, then inactive; alumni separate) ----
   const [newAgent, setNewAgent] = useStateATT("");
@@ -143,7 +139,10 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
       const pct = (p + ab) > 0 ? p / (p + ab) : 0;
       const avg = p > 0 ? leadsCount / p : 0;
       return { ...a, present: p, absent: ab, off, pct, avg, leadsCount };
-    }).sort((a, b) => a.full_name.localeCompare(b.full_name));
+    }).sort((a, b) => {
+      const ra = a.status === "active" ? 0 : 1, rb = b.status === "active" ? 0 : 1;
+      return ra !== rb ? ra - rb : a.full_name.localeCompare(b.full_name);
+    });
   }, [campaignAgents, dateCols, attMap, leads, campaign.id]);
 
   const rollup = useMemoATT(() => {
@@ -241,18 +240,27 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
           </div>
         </div>
 
-        <RangeNav
-          options={[{ key: "7", label: "7d" }, { key: "14", label: "14d" }, { key: "30", label: "30d" }]}
-          value={String(attDays)}
-          onChange={(k) => { setAttDays(Number(k)); setAttOffset(0); }}
-          rangeLabel={rangeLabel}
-          canBack={attOffset < maxOffset}
-          canForward={attOffset > 0}
-          onBack={() => setAttOffset(o => Math.min(maxOffset, o + attDays))}
-          onForward={() => setAttOffset(o => Math.max(0, o - attDays))}
-          onReset={() => setAttOffset(0)}
-          canReset={attOffset !== 0}
-        />
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <RangeNav
+            options={[{ key: "7", label: "7d" }, { key: "14", label: "14d" }, { key: "30", label: "30d" }]}
+            value={String(attDays)}
+            onChange={(k) => { setAttDays(Number(k)); setAttOffset(0); }}
+            rangeLabel={rangeLabel}
+            canBack={attOffset < maxOffset}
+            canForward={attOffset > 0}
+            onBack={() => setAttOffset(o => Math.min(maxOffset, o + attDays))}
+            onForward={() => setAttOffset(o => Math.max(0, o - attDays))}
+            onReset={() => setAttOffset(0)}
+            canReset={attOffset !== 0}
+          />
+          <button
+            className={"chip" + (showInactive ? " active" : "")}
+            onClick={() => setShowInactive(v => !v)}
+            title="Include inactive / terminated agents"
+          >
+            {showInactive ? "All agents" : "Active only"}
+          </button>
+        </div>
       </div>
 
       <div className="help" style={{ marginBottom: 12 }}>
@@ -299,7 +307,7 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
                 if (a.pct < 0.6) pctCls = "att-warn-red";
                 else if (a.pct < 0.8) pctCls = "att-warn-amber";
                 return (
-                  <tr key={a.id}>
+                  <tr key={a.id} style={a.status !== "active" ? { opacity: 0.5 } : {}}>
                     <td
                       title="Click to mark this agent present every weekday in the visible window"
                       onClick={() => markAllPresentForAgent(a.id)}
