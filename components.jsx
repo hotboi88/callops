@@ -920,13 +920,20 @@ function WeeklyStats({ campaign, leads, shiftLogs, agents, attendanceOverrides, 
     () => (agents || []).filter(a => a.campaign_id === campaign.id && a.status === "active"),
     [agents, campaign.id]
   );
-  const leadDays = useMemo(() => {
-    const m = {};
-    camLeads.forEach(l => { m[l.agent_id + "|" + l.date] = true; });
-    return m;
-  }, [camLeads]);
+  // Ground-truth attendance from Derek's daily reports (data.js).
+  const attData = useMemo(() => {
+    const present = {};
+    const reportDays = new Set();
+    ((window.MOCK_DATA && window.MOCK_DATA.attendance) || []).forEach(r => {
+      if (r.campaign_id !== campaign.id) return;
+      present[r.agent_id + "|" + r.date] = true;
+      reportDays.add(r.date);
+    });
+    return { present, reportDays };
+  }, [campaign.id]);
   const presentCountFor = (date) => {
     if (!camAgents.length) return null;
+    if (!attData.reportDays.has(date)) return null; // no report → not a working day
     let n = 0;
     camAgents.forEach(a => {
       const key = a.id + "|" + date;
@@ -934,11 +941,8 @@ function WeeklyStats({ campaign, leads, shiftLogs, agents, attendanceOverrides, 
       let status;
       if (ov) status = ov;
       else if (a.date_added && date < a.date_added) status = "off";
-      else if (leadDays[key]) status = "present";
-      else {
-        const dow = U.parseDate(date).getDay();
-        status = (dow === 0 || dow === 6) ? "off" : "absent";
-      }
+      else if (a.date_removed && date > a.date_removed) status = "off";
+      else status = attData.present[key] ? "present" : "absent";
       if (status === "present") n++;
     });
     return n;

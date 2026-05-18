@@ -100,29 +100,29 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
 
   const attMap = useMemoATT(() => {
     const m = {};
-    const leadDays = {};
-    leads.forEach(l => {
-      if (l.campaign_id !== campaign.id) return;
-      leadDays[l.agent_id + "|" + l.date] = true;
+    // Ground-truth attendance from Derek's daily reports (data.js). A day with
+    // no report = non-working day → everyone "off".
+    const present = {};
+    const reportDays = new Set();
+    ((window.MOCK_DATA && window.MOCK_DATA.attendance) || []).forEach(r => {
+      if (r.campaign_id !== campaign.id) return;
+      present[r.agent_id + "|" + r.date] = true;
+      reportDays.add(r.date);
     });
     campaignAgents.forEach(a => {
       dateCols.forEach(d => {
         const key = a.id + "|" + d;
         const override = attendanceOverrides[key];
-        if (override) {
-          m[key] = { status: override, auto: false };
-        } else {
-          const dow = U.parseDate(d).getDay();
-          if (a.date_added && d < a.date_added) m[key] = { status: "off", auto: true, preHire: true };
-          else if (a.date_removed && d > a.date_removed) m[key] = { status: "off", auto: true, postTerm: true };
-          else if (leadDays[key]) m[key] = { status: "present", auto: true };
-          else if (dow === 0 || dow === 6) m[key] = { status: "off", auto: true };
-          else m[key] = { status: "absent", auto: true };
-        }
+        if (override) m[key] = { status: override, auto: false };
+        else if (a.date_added && d < a.date_added) m[key] = { status: "off", auto: true, preHire: true };
+        else if (a.date_removed && d > a.date_removed) m[key] = { status: "off", auto: true, postTerm: true };
+        else if (!reportDays.has(d)) m[key] = { status: "off", auto: true };
+        else if (present[key]) m[key] = { status: "present", auto: true };
+        else m[key] = { status: "absent", auto: true };
       });
     });
     return m;
-  }, [campaignAgents, dateCols, leads, campaign.id, attendanceOverrides]);
+  }, [campaignAgents, dateCols, campaign.id, attendanceOverrides]);
 
   const attSummary = useMemoATT(() => {
     return campaignAgents.map(a => {

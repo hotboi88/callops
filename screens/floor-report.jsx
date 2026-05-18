@@ -29,20 +29,22 @@ function FloorReport({ campaign, agents, leads, shiftLogs, attendanceOverrides, 
   const days = useMemoFR(() => {
     const inRange = (d) => (dailyPreset.days == null && !customRange) || (d >= dailyRange.startISO && d <= dailyRange.endISO);
     const camAgents = agents.filter(a => a.campaign_id === campaign.id && a.status === "active");
-    const leadDays = {};
-    leads.forEach(l => {
-      if (l.campaign_id !== campaign.id) return;
-      leadDays[l.agent_id + "|" + l.date] = true;
+    // Ground-truth attendance from Derek's daily reports (data.js).
+    const present = {};
+    const reportDays = new Set();
+    ((window.MOCK_DATA && window.MOCK_DATA.attendance) || []).forEach(r => {
+      if (r.campaign_id !== campaign.id) return;
+      present[r.agent_id + "|" + r.date] = true;
+      reportDays.add(r.date);
     });
     const statusFor = (agent, date) => {
       const key = agent.id + "|" + date;
       const ov = attendanceOverrides && attendanceOverrides[key];
       if (ov) return ov;
       if (agent.date_added && date < agent.date_added) return "off";
-      if (leadDays[key]) return "present";
-      const dow = U.parseDate(date).getDay();
-      if (dow === 0 || dow === 6) return "off";
-      return "absent";
+      if (agent.date_removed && date > agent.date_removed) return "off";
+      if (!reportDays.has(date)) return "off";
+      return present[key] ? "present" : "absent";
     };
     const presentCountForDate = (date) => {
       let n = 0;
