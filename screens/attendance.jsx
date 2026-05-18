@@ -145,7 +145,13 @@ function Attendance({ campaign, agents, leads, attendanceOverrides, onSetAttenda
       return { ...a, present: p, absent: ab, off, pct, avg, leadsCount };
     }).sort((a, b) => {
       const ra = a.status === "active" ? 0 : 1, rb = b.status === "active" ? 0 : 1;
-      return ra !== rb ? ra - rb : a.full_name.localeCompare(b.full_name);
+      if (ra !== rb) return ra - rb;
+      // Sort by age on the campaign: earliest start date (most senior) first.
+      // Agents with no recorded start date sort last.
+      const da = a.date_added || "9999-99-99";
+      const db = b.date_added || "9999-99-99";
+      if (da !== db) return da < db ? -1 : 1;
+      return (a.full_name || "").localeCompare(b.full_name || "");
     });
   }, [campaignAgents, dateCols, attMap, leads, campaign.id]);
 
