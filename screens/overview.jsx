@@ -1,7 +1,7 @@
 // Overview — first tab of every campaign. Headline KPIs, week-over-week, top performers, activity.
 const { useMemo: useMemoOV } = React;
 
-function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJumpTab }) {
+function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJumpTab, onOpenAgent }) {
   const today = window.MOCK_DATA?.today;
   const todayDate = window.MOCK_TODAY;
 
@@ -10,9 +10,15 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
     const s = U.startOfWeek(todayDate), e = U.endOfWeek(todayDate);
     return { start: U.dayStr(s), end: U.dayStr(e), label: "This week" };
   }, []);
+  // Days elapsed since this week's Monday (0 = Mon … 6 = Sun). Last week's
+  // comparison window is capped to the same slice, so a partial week (e.g. a
+  // Monday morning) isn't measured against a full prior week.
+  const elapsedDays = (todayDate.getDay() + 6) % 7;
   const lw = useMemoOV(() => {
     const d = new Date(todayDate); d.setDate(d.getDate() - 7);
-    return { start: U.dayStr(U.startOfWeek(d)), end: U.dayStr(U.endOfWeek(d)), label: "Last week" };
+    const lwStart = U.startOfWeek(d);
+    const lwEnd = new Date(lwStart); lwEnd.setDate(lwEnd.getDate() + elapsedDays);
+    return { start: U.dayStr(lwStart), end: U.dayStr(lwEnd), label: "Last week to date" };
   }, []);
 
   // Helpers
@@ -307,7 +313,10 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
           ) : (
             <div style={{ display: "flex", flexDirection: "column" }}>
               {topPerformers.map((r, idx) => (
-                <div key={r.agent_id} style={{
+                <div key={r.agent_id}
+                  onClick={() => onOpenAgent && onOpenAgent(r.agent_id)}
+                  title="Open agent report"
+                  style={{
                   display: "grid",
                   gridTemplateColumns: "16px 1fr auto auto auto",
                   gap: 10,
@@ -315,6 +324,7 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
                   borderTop: idx === 0 ? "none" : "1px solid var(--border-subtle)",
                   alignItems: "center",
                   fontSize: 12,
+                  cursor: "pointer",
                 }}>
                   <span className="mono" style={{ color: "var(--text-4)", fontSize: 11 }}>{idx + 1}</span>
                   <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -523,7 +533,7 @@ function StatusBar({ leads }) {
 
 function DeltaSub({ current, prev, delta, format }) {
   if (prev === 0 && current === 0) return <span>—</span>;
-  if (prev === 0) return <span style={{ color: "var(--text-3)" }}>new vs last week</span>;
+  if (prev === 0) return <span style={{ color: "var(--text-3)" }}>new this week</span>;
   const up = delta >= 0;
   const color = up ? "var(--money-pos)" : "var(--status-dnc-fg)";
   return (
@@ -531,7 +541,7 @@ function DeltaSub({ current, prev, delta, format }) {
       <span style={{ color }}>
         {up ? "▲" : "▼"} {Math.abs(Math.round(delta * 100))}%
       </span>
-      <span style={{ color: "var(--text-4)" }}> vs {format(prev)} last week</span>
+      <span style={{ color: "var(--text-4)" }}> vs {format(prev)} last wk to date</span>
     </span>
   );
 }

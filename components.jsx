@@ -867,7 +867,7 @@ function DateRangePicker({ open, onClose, anchorRef, value, onChange }) {
 // Default 3 months (overridable via defaultPresetKey); presets [1mo, 3mo, 6mo,
 // 1yr, All]; plus a "Pick months…" chip that opens a MonthRangePicker for
 // arbitrary spans. No offset caps — user can page indefinitely back through history.
-function WeeklyStats({ campaign, leads, shiftLogs, agents, attendanceOverrides, title = "Weekly stats", className = "", defaultPresetKey = "3m" }) {
+function WeeklyStats({ campaign, leads, shiftLogs, agents, attendanceOverrides, title = "Weekly stats", className = "", defaultPresetKey = "3m", includeInactiveAgents = false }) {
   const camLeads = useMemo(() => leads.filter(l => l.campaign_id === campaign.id), [leads, campaign.id]);
 
   const PRESETS = [
@@ -917,8 +917,8 @@ function WeeklyStats({ campaign, leads, shiftLogs, agents, attendanceOverrides, 
   // Active roster + per-day present-count helper (Avg Floor is derived from
   // attendance — count of agents with status="present" for each day).
   const camAgents = useMemo(
-    () => (agents || []).filter(a => a.campaign_id === campaign.id && a.status === "active"),
-    [agents, campaign.id]
+    () => (agents || []).filter(a => a.campaign_id === campaign.id && (includeInactiveAgents || a.status === "active")),
+    [agents, campaign.id, includeInactiveAgents]
   );
   // Ground-truth attendance from Derek's daily reports (data.js).
   const attData = useMemo(() => {

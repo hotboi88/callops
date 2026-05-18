@@ -228,6 +228,7 @@ function CampaignShell(props) {
           shiftLogs={props.shiftLogs}
           attendanceOverrides={props.attendanceOverrides}
           onJumpTab={onTab}
+          onOpenAgent={props.openAgent}
         />
       )}
       {tab === "lead_log" && (
@@ -249,14 +250,29 @@ function CampaignShell(props) {
           onInviteUser={props.onInviteUser}
         />
       )}
-      {tab === "agent_report" && (
-        <AgentReport
-          campaign={campaign}
-          agents={props.agents}
-          leads={props.leads}
-          onAddAgent={(name, isTl) => props.onAddAgent(campaign.id, name, isTl)}
-        />
-      )}
+      {tab === "agent_report" && (() => {
+        const detailAgent = props.agentDetailId
+          ? props.agents.find(a => a.id === props.agentDetailId)
+          : null;
+        return detailAgent ? (
+          <AgentDetail
+            campaign={campaign}
+            agent={detailAgent}
+            agents={props.agents}
+            leads={props.leads}
+            attendanceOverrides={props.attendanceOverrides}
+            onBack={props.onCloseAgent}
+          />
+        ) : (
+          <AgentReport
+            campaign={campaign}
+            agents={props.agents}
+            leads={props.leads}
+            onOpenAgent={props.openAgent}
+            onAddAgent={(name, isTl) => props.onAddAgent(campaign.id, name, isTl)}
+          />
+        );
+      })()}
       {tab === "floor_report" && (
         <FloorReport
           campaign={campaign}
@@ -352,7 +368,13 @@ function App({ authedProfile }) {
   // Route state
   const [activeCampaignId, setActiveCampaignId] = useStateApp(null);
   const [tab, setTab] = useStateApp("overview");
+  const [agentDetailId, setAgentDetailId] = useStateApp(null);
   const [showNewCampaign, setShowNewCampaign] = useStateApp(false);
+
+  // The tab bar clears any open agent drill-down; openAgent routes into it.
+  const handleTab = useCallbackApp((k) => { setTab(k); setAgentDetailId(null); }, []);
+  const openAgent = useCallbackApp((id) => { setAgentDetailId(id); setTab("agent_report"); }, []);
+  useEffectApp(() => { setAgentDetailId(null); }, [activeCampaignId]);
 
   // ---- Persistence: localStorage + Supabase cloud autosave & live sync ----
   // The whole data state is mirrored to localStorage (instant, offline-safe)
@@ -1107,7 +1129,10 @@ function App({ authedProfile }) {
         <CampaignShell
           campaign={activeCampaign}
           tab={tab}
-          onTab={setTab}
+          onTab={handleTab}
+          agentDetailId={agentDetailId}
+          openAgent={openAgent}
+          onCloseAgent={() => setAgentDetailId(null)}
           profile={profile}
           canDo={canDo}
           agents={agents}

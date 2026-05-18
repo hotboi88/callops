@@ -1,7 +1,7 @@
 // Agent Report — weekly per-agent breakdown
 const { useState: useStateAR, useMemo: useMemoAR, useEffect: useEffectAR, useRef: useRefAR } = React;
 
-function AgentReport({ campaign, agents, leads, onAddAgent }) {
+function AgentReport({ campaign, agents, leads, onAddAgent, onOpenAgent }) {
   const [showAdd, setShowAdd] = useStateAR(false);
 
   const AR_PRESETS = [
@@ -121,7 +121,7 @@ function AgentReport({ campaign, agents, leads, onAddAgent }) {
         <table className="table">
           <thead>
             <tr>
-              <th>Agent</th>
+              <th style={{ width: 280 }}>Agent</th>
               <th className="num" style={{ width: 80 }}>Total Leads</th>
               <th className="num" style={{ width: 80 }}>Pending</th>
               <th className="num" style={{ width: 95 }}>Transferred</th>
@@ -136,15 +136,22 @@ function AgentReport({ campaign, agents, leads, onAddAgent }) {
             {rows.map(a => {
               const warn = a.transferred >= 5 && (a.ia + a.confirmed) === 0;
               return (
-                <tr key={a.id} className={warn ? "row-warn" : ""}>
+                <tr
+                  key={a.id}
+                  className={(warn ? "row-warn " : "") + "clickable"}
+                  onClick={() => onOpenAgent && onOpenAgent(a.id)}
+                  title="Open agent report"
+                >
                   <td>
-                    {a.full_name}
-                    {a.is_tl && <TLBadge small/>}
-                    {warn && (
-                      <span className="tag" style={{ marginLeft: 8, color: "var(--status-dnc-fg)", borderColor: "var(--status-dnc-ring)", background: "var(--status-dnc-bg)" }}>
-                        Needs attention
-                      </span>
-                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 20 }}>
+                      <span>{a.full_name}</span>
+                      {a.is_tl && <TLBadge small/>}
+                      {warn && (
+                        <span className="tag" style={{ color: "var(--status-dnc-fg)", borderColor: "var(--status-dnc-ring)", background: "var(--status-dnc-bg)" }}>
+                          Needs attention
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="num"><span className="money money-bold">{a.total || "—"}</span></td>
                   <td className="num"><span className={a.pending ? "money" : "money money-muted"}>{a.pending || "—"}</span></td>

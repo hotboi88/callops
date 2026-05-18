@@ -14,6 +14,9 @@ function FloorReport({ campaign, agents, leads, shiftLogs, attendanceOverrides, 
   const [customRange, setCustomRange] = useStateFR(null);
   const [pickerOpen, setPickerOpen] = useStateFR(false);
   const pickerBtnRef = useRefFR(null);
+  // Default: count every agent who worked, regardless of current roster status —
+  // historical floor counts should reflect who was actually there.
+  const [showAllAgents, setShowAllAgents] = useStateFR(true);
   const dailyPreset = DAILY_PRESETS.find(p => p.key === dailyKey) || DAILY_PRESETS[1];
   const presetRange = useMemoFR(() => window.dayRange(dailyPreset.days, dailyOffset), [dailyPreset.days, dailyOffset]);
   const dailyRange = customRange
@@ -28,7 +31,7 @@ function FloorReport({ campaign, agents, leads, shiftLogs, attendanceOverrides, 
   // attendance (count of agents with status="present" for that date).
   const days = useMemoFR(() => {
     const inRange = (d) => (dailyPreset.days == null && !customRange) || (d >= dailyRange.startISO && d <= dailyRange.endISO);
-    const camAgents = agents.filter(a => a.campaign_id === campaign.id && a.status === "active");
+    const camAgents = agents.filter(a => a.campaign_id === campaign.id && (showAllAgents || a.status === "active"));
     // Ground-truth attendance from Derek's daily reports (data.js).
     const present = {};
     const reportDays = new Set();
@@ -66,12 +69,12 @@ function FloorReport({ campaign, agents, leads, shiftLogs, attendanceOverrides, 
     });
     Object.values(map).forEach(r => { r.on_floor = presentCountForDate(r.date); });
     return Object.values(map).sort((a, b) => b.date.localeCompare(a.date));
-  }, [leads, agents, attendanceOverrides, campaign.id, dailyRange, dailyPreset.days, customRange]);
+  }, [leads, agents, attendanceOverrides, campaign.id, dailyRange, dailyPreset.days, customRange, showAllAgents]);
 
   return (
     <div className="tab-content">
       {/* Weekly rollup + lifetime totals — defaults to All here */}
-      <WeeklyStats campaign={campaign} leads={leads} shiftLogs={shiftLogs} agents={agents} attendanceOverrides={attendanceOverrides} defaultPresetKey="all" />
+      <WeeklyStats campaign={campaign} leads={leads} shiftLogs={shiftLogs} agents={agents} attendanceOverrides={attendanceOverrides} defaultPresetKey="all" includeInactiveAgents={showAllAgents} />
       <div style={{ height: 22 }}/>
 
       {/* Daily Stats */}
@@ -129,6 +132,13 @@ function FloorReport({ campaign, agents, leads, shiftLogs, attendanceOverrides, 
             value={customRange || (dailyPreset.days != null ? presetRange : null)}
             onChange={(r) => { setCustomRange(r); setDailyOffset(0); }}
           />
+          <button
+            className={"chip" + (showAllAgents ? " active" : "")}
+            onClick={() => setShowAllAgents(v => !v)}
+            title="Include inactive / terminated agents in the floor counts"
+          >
+            {showAllAgents ? "All agents" : "Active only"}
+          </button>
         </div>
       </div>
 
