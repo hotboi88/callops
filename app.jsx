@@ -347,6 +347,22 @@ function App({ authedProfile }) {
   const [view, setView] = useStateApp("app"); // "app" | "admin"
   const userMenuRef = React.useRef(null);
 
+  // ---- Mobile viewport detection — phones get the dedicated mobile app ----
+  const [isMobile, setIsMobile] = useStateApp(
+    () => !!(window.matchMedia && window.matchMedia("(max-width: 768px)").matches)
+  );
+  useEffectApp(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia("(max-width: 768px)");
+    const h = (e) => setIsMobile(e.matches);
+    if (mq.addEventListener) mq.addEventListener("change", h);
+    else mq.addListener(h);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", h);
+      else mq.removeListener(h);
+    };
+  }, []);
+
   // ---- Audit helper ----
   const pushAudit = useCallbackApp((entry) => {
     const e = {
@@ -568,6 +584,14 @@ function App({ authedProfile }) {
     }
   }, [profile.id, rolePerms, userOverrides, view, activeCampaignId]);
 
+  // The mobile app is single-campaign — make sure one is selected.
+  useEffectApp(() => {
+    if (isMobile && activeCampaignId === null) {
+      const c = visibleCampaigns[0] || campaigns[0];
+      if (c) setActiveCampaignId(c.id);
+    }
+  }, [isMobile, activeCampaignId, visibleCampaigns, campaigns]);
+
   // Theme tweak
   const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
     "theme": "dark"
@@ -595,14 +619,17 @@ function App({ authedProfile }) {
       seq: 9999999,
       created_at: new Date().toISOString(),
       date: lead.date,
+      time: lead.time || "",
       customer_name: lead.customer_name,
       phone: lead.phone,
+      address: lead.address || "",
       status: lead.status,
       client_commission: 0,
       spiff: lead.spiff || 0,
       tl_bonus: lead.tl_bonus || 0,
       tl_recipient_id: lead.tl_recipient_id || null,
       appointment_date: lead.appointment_date || null,
+      appointment_time: lead.appointment_time || null,
       notes: lead.notes || "",
     };
     setLeads(prev => {
@@ -982,6 +1009,37 @@ function App({ authedProfile }) {
         </div>
       </div>
     );
+  }
+
+  // ---- Mobile app — rendered on phones, reuses all state + handlers ----
+  if (isMobile && window.__CallOpsMobile) {
+    const MobileApp = window.__CallOpsMobile;
+    const mobileCampaign = activeCampaign || visibleCampaigns[0] || campaigns[0];
+    if (mobileCampaign) {
+      return (
+        <MobileApp
+          campaign={mobileCampaign}
+          agents={agents}
+          leads={leads}
+          attendanceOverrides={attendanceOverrides}
+          profile={profile}
+          users={users}
+          auditLog={auditLog}
+          rolePerms={rolePerms}
+          userOverrides={userOverrides}
+          canDo={canDo}
+          handlers={{
+            onAddLead, onUpdateLead, onDeleteLead, onUpdateCampaign,
+            onInviteUser, onUpdateUser: onUpdateUserMut, onSuspendUser,
+            onDeleteUser, onResendInvite, onUpdateRolePerms, onUpdateUserOverrides,
+            onSignOut: () => {
+              pushAudit({ kind: "auth.signout", category: "auth", description: "Signed out" });
+              setSignedOut(true);
+            },
+          }}
+        />
+      );
+    }
   }
 
   return (

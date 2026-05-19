@@ -2,8 +2,25 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=1280"/>
+  <meta id="vp" name="viewport" content="width=1280"/>
   <title>CallOps — Call Center Manager</title>
+
+  <!-- Phones get a device-width viewport so the mobile app renders 1:1;
+       desktop keeps the fixed 1280 layout. -->
+  <script>
+    (function () {
+      var vp = document.getElementById("vp");
+      var mq = window.matchMedia("(max-width: 768px)");
+      function setVP() {
+        vp.setAttribute("content", mq.matches
+          ? "width=device-width, initial-scale=1, viewport-fit=cover"
+          : "width=1280");
+      }
+      setVP();
+      if (mq.addEventListener) mq.addEventListener("change", setVP);
+      else window.addEventListener("resize", setVP);
+    })();
+  </script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -47,6 +64,9 @@
   <script type="text/babel" src="screens/attendance.jsx"></script>
   <script type="text/babel" src="screens/settings.jsx"></script>
   <script type="text/babel" src="screens/admin.jsx"></script>
+
+  <!-- Mobile app (rendered by app.jsx when the viewport is a phone) -->
+  <script type="text/babel" src="mobile/mobile.jsx"></script>
 
   <!-- App entry -->
   <script type="text/babel" src="app.jsx"></script>
