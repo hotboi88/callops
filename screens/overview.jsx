@@ -64,14 +64,36 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
   const cmpPrevLeads = cmpPrev.length;
   const leadDelta = cmpPrevLeads > 0 ? (cmpCurLeads - cmpPrevLeads) / cmpPrevLeads : 0;
 
-  // Today snapshot
-  const todayShift = useMemoOV(() => {
-    return shiftLogs.find(s => s.campaign_id === campaign.id && s.date === today);
-  }, [shiftLogs, campaign.id, today]);
+  // Agents on the floor today — derived from the Attendance tab (the shift
+  // logger was removed). onFloor stays null until attendance is taken today.
+  const todayFloor = useMemoOV(() => {
+    const present = {};
+    const reportDays = new Set();
+    ((window.MOCK_DATA && window.MOCK_DATA.attendance) || []).forEach(r => {
+      if (r.campaign_id !== campaign.id) return;
+      present[r.agent_id + "|" + r.date] = true;
+      reportDays.add(r.date);
+    });
+    const taken = reportDays.has(today) ||
+      Object.keys(attendanceOverrides || {}).some(k => k.endsWith("|" + today));
+    if (!taken) return { onFloor: null, taken: false };
+    const statusFor = (agent) => {
+      const ov = attendanceOverrides && attendanceOverrides[agent.id + "|" + today];
+      if (ov) return ov;
+      if (agent.date_added && today < agent.date_added) return "off";
+      if (agent.date_removed && today > agent.date_removed) return "off";
+      if (!reportDays.has(today)) return "off";
+      return present[agent.id + "|" + today] ? "present" : "absent";
+    };
+    let n = 0;
+    camAgents.forEach(a => { if (statusFor(a) === "present") n++; });
+    return { onFloor: n, taken: true };
+  }, [camAgents, attendanceOverrides, campaign.id, today]);
 
+  // Today snapshot
   const todaySnapshot = useMemoOV(() => {
     return {
-      onFloor: todayShift?.agents_on_floor ?? null,
+      onFloor: todayFloor.onFloor,
       total: todayLeads.length,
       ia: count(todayLeads, l => l.status === "ia"),
       confirmed: count(todayLeads, l => l.status === "confirmed"),
@@ -79,7 +101,7 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
       pending: count(todayLeads, l => l.status === "pending"),
       bill: sum(todayLeads, l => l.client_commission),
     };
-  }, [todayLeads, todayShift]);
+  }, [todayLeads, todayFloor]);
 
   // Top performers (this week, by IA + confirms)
   const topPerformers = useMemoOV(() => {
@@ -150,13 +172,13 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
         });
       }
     });
-    // No shift logged today
-    if (todayShift == null && U.parseDate(today).getDay() >= 1 && U.parseDate(today).getDay() <= 5) {
+    // Attendance not taken for today
+    if (!todayFloor.taken && U.parseDate(today).getDay() >= 1 && U.parseDate(today).getDay() <= 5) {
       items.push({
         kind: "info",
-        title: "No shift logged for today — track agents on floor for accurate lead-to-agent ratios",
-        action: "Log shift",
-        tab: "floor_report"
+        title: "No attendance taken for today — mark agents present in the Attendance tab",
+        action: "Take attendance",
+        tab: "attendance"
       });
     }
     // Pending leads to follow up on (older than 3 days)
@@ -171,7 +193,7 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
       });
     }
     return items.slice(0, 4);
-  }, [twLeads, camLeads, agents, todayShift]);
+  }, [twLeads, camLeads, agents, todayFloor]);
 
   return (
     <div className="tab-content">
