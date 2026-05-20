@@ -210,6 +210,31 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
         </h1>
       </div>
 
+      {/* Needs attention — surfaced at the top so it's seen first */}
+      {attentionItems.length > 0 && (
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <h3 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 600 }}>Needs attention</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+            {attentionItems.map((it, i) => (
+              <div key={i} style={{
+                display: "flex", alignItems: "center", gap: 12,
+                padding: "10px 0",
+                borderTop: i === 0 ? "none" : "1px solid var(--border-subtle)",
+              }}>
+                <span style={{
+                  width: 6, height: 6, borderRadius: 999,
+                  background: it.kind === "warn" ? "var(--status-dnc-fg)" : "var(--money-spiff)",
+                }}/>
+                <span style={{ fontSize: 12.5, color: "var(--text-2)", flex: 1 }}>{it.title}</span>
+                <button className="btn btn-sm" onClick={() => onJumpTab(it.tab)}>
+                  {it.action} <Icon name="chevronRight" size={11}/>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Headline KPIs — this week */}
       <div className="kpi-grid" style={{ marginBottom: 16 }}>
         <Kpi
@@ -383,30 +408,6 @@ function Overview({ campaign, agents, leads, shiftLogs, attendanceOverrides, onJ
         </div>
       </div>
 
-      {/* Attention items */}
-      {attentionItems.length > 0 && (
-        <div className="card" style={{ padding: 16 }}>
-          <h3 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 600 }}>Needs attention</h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-            {attentionItems.map((it, i) => (
-              <div key={i} style={{
-                display: "flex", alignItems: "center", gap: 12,
-                padding: "10px 0",
-                borderTop: i === 0 ? "none" : "1px solid var(--border-subtle)",
-              }}>
-                <span style={{
-                  width: 6, height: 6, borderRadius: 999,
-                  background: it.kind === "warn" ? "var(--status-dnc-fg)" : "var(--money-spiff)",
-                }}/>
-                <span style={{ fontSize: 12.5, color: "var(--text-2)", flex: 1 }}>{it.title}</span>
-                <button className="btn btn-sm" onClick={() => onJumpTab(it.tab)}>
-                  {it.action} <Icon name="chevronRight" size={11}/>
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
