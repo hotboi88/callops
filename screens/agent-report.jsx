@@ -46,7 +46,12 @@ function AgentReport({ campaign, agents, leads, onOpenAgent }) {
         const conv = transferred > 0 ? (r.ia + r.confirmed) / transferred : 0;
         return { ...a, ...r, transferred, conv };
       });
-    list.sort((a, b) => (b.ia + b.confirmed) - (a.ia + a.confirmed));
+    list.sort((a, b) => {
+      const ca = a.ia + a.confirmed, cb = b.ia + b.confirmed;
+      if (ca !== cb) return cb - ca;
+      // Tiebreaker: higher conversion *rate* climbs higher when converted counts tie.
+      return b.conv - a.conv;
+    });
     return list;
   }, [agents, leads, campaign.id, range, preset.days, customRange]);
 
@@ -58,7 +63,7 @@ function AgentReport({ campaign, agents, leads, onOpenAgent }) {
         <div>
           <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Agent Performance</h2>
           <div className="help" style={{ marginTop: 2 }}>
-            Sorted by IAs + Confirms. Agents with 5+ transferred and 0 conversions flagged.
+            Sorted by IAs + Confirms, with conversion rate as the tiebreaker. Agents with 5+ transferred and 0 conversions flagged.
           </div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
